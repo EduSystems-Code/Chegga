@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -39,6 +39,25 @@ class MoveAnalysis(Base):
     # labels. See engine_analysis.classify() for the tunable cutoffs.
     classification: Mapped[str] = mapped_column(String(16))
     game_phase: Mapped[str] = mapped_column(String(16))  # opening/middlegame/endgame
+
+    # WHY a mistake/blunder happened -- see blunder_tagger.tag_move() for the
+    # heuristics. Null for anything better than a mistake (nothing to tag).
+    blunder_tag: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
+    # Chess.com's own %clk PGN annotation, parsed at analysis time -- clock
+    # seconds remaining immediately after this move. Null for time controls
+    # without a meaningful clock (daily/correspondence) or PGNs missing it.
+    clock_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Which time_pressure_service band clock_seconds fell into, computed
+    # once at analysis time rather than re-derived from clock_seconds +
+    # Game.time_control on every profile page load -- with the move table
+    # headed toward low millions of rows across the full history, a GROUP
+    # BY on this column is the difference between a fast query and pulling
+    # every row into Python to bucket it there. Same tradeoff already made
+    # for blunder_tag: recomputed only by re-analysis if the band
+    # boundaries ever change, not read live from a formula.
+    time_pressure_band: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     # Drill generator state. Null = never drilled. False = shown and missed
     # (stays eligible, resurfaces). True = solved -- excluded from future

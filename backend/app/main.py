@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.models  # noqa: F401 - registers every model on Base.metadata before create_all runs
-from app.api.routes import analysis, coaching, drills, games, health, profile, strength, sync
+from app.api.routes import analysis, coaching, drills, games, health, matchups, profile, strength, sync, time_pressure
 from app.db.base import Base
 from app.db.session import engine
 
@@ -34,6 +34,8 @@ app.include_router(sync.router, prefix="/api")
 app.include_router(games.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
+app.include_router(matchups.router, prefix="/api")
+app.include_router(time_pressure.router, prefix="/api")
 app.include_router(strength.router, prefix="/api")
 app.include_router(drills.router, prefix="/api")
 app.include_router(coaching.router, prefix="/api")

@@ -17,3 +17,5 @@ class MoveAnalysisOut(BaseModel):
     move_rank: int | None
     classification: str
     game_phase: str
+    blunder_tag: str | None
+    clock_seconds: float | None

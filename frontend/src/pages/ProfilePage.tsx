@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Legend,
   Line,
@@ -13,9 +15,29 @@ import { api } from "../api/client";
 import type {
   CoachingReport,
   ProfileSummary,
+  RatingGapBucket,
+  RivalRecord,
   StrengthPrediction,
   StrengthTrainStatus,
+  TimePressureBucket,
 } from "../types/game";
+
+// Same idea as CLASS_COLOR below, one color per blunder_tag so the same
+// pattern reads consistently wherever it shows up.
+const TAG_LABEL: Record<string, string> = {
+  missed_mate: "missed mate",
+  allowed_mate: "allowed mate",
+  hung_material: "hung material",
+  missed_capture: "missed capture",
+  positional: "positional",
+};
+const TAG_COLOR: Record<string, string> = {
+  missed_mate: "#e53935",
+  allowed_mate: "#d81b60",
+  hung_material: "#fb8c00",
+  missed_capture: "#ffb300",
+  positional: "#9aa2b1",
+};
 
 const CLASSIFICATION_ORDER = ["best", "excellent", "good", "inaccuracy", "mistake", "blunder"];
 
@@ -50,10 +72,17 @@ export default function ProfilePage() {
   const [coachingError, setCoachingError] = useState<string | null>(null);
   const [report, setReport] = useState<CoachingReport | null>(null);
 
+  const [rivals, setRivals] = useState<RivalRecord[]>([]);
+  const [ratingGap, setRatingGap] = useState<RatingGapBucket[]>([]);
+  const [timePressure, setTimePressure] = useState<TimePressureBucket[]>([]);
+
   useEffect(() => {
     api.getProfile().then(setProfile).catch((e) => setError(String(e)));
     api.strengthTrainingStatus().then(setStrengthStatus).catch(() => {});
     api.latestCoachingReport().then(setReport).catch(() => {});
+    api.getRivals().then(setRivals).catch(() => {});
+    api.getRatingGap().then(setRatingGap).catch(() => {});
+    api.getTimePressure().then(setTimePressure).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -122,6 +151,30 @@ export default function ProfilePage() {
             ))}
           </div>
 
+          {Object.keys(profile.blunder_tag_counts).length > 0 && (
+            <>
+              <h3>Blunder patterns — why, not just how costly</h3>
+              <div className="classification-bar">
+                {Object.entries(profile.blunder_tag_counts)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([tag, count]) => {
+                    const total = Object.values(profile.blunder_tag_counts).reduce((a, b) => a + b, 0);
+                    return (
+                      <div
+                        key={tag}
+                        className="classification-segment"
+                        style={{ flexGrow: count, background: TAG_COLOR[tag] ?? "#9aa2b1" }}
+                      >
+                        <span>
+                          {TAG_LABEL[tag] ?? tag} {((count / total) * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          )}
+
           <h3>By game phase</h3>
           <table>
             <thead>
@@ -139,6 +192,26 @@ export default function ProfilePage() {
               ))}
             </tbody>
           </table>
+
+          {timePressure.some((b) => b.moves > 0) && (
+            <>
+              <h3>Blunder rate by time remaining</h3>
+              <p className="status">
+                Live time controls only (bullet/blitz/rapid) — from the real clock time on each of your moves, not an estimate.
+              </p>
+              <div className="eval-graph">
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={timePressure} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
+                    <Tooltip formatter={(v) => `${(Number(v) * 100).toFixed(1)}%`} />
+                    <Bar dataKey="blunder_rate" name="Blunder rate" fill="#e53935" isAnimationActive={false} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
 
           <h3>Play quality over time</h3>
           <div className="eval-graph">
@@ -176,6 +249,53 @@ export default function ProfilePage() {
               ))}
             </tbody>
           </table>
+
+          {rivals.length > 0 && (
+            <>
+              <h3>Rivals (2+ games played)</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Opponent</th>
+                    <th>Games</th>
+                    <th>W</th>
+                    <th>L</th>
+                    <th>D</th>
+                    <th>Win rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rivals.map((r) => (
+                    <tr key={r.opponent}>
+                      <td>{r.opponent}</td>
+                      <td>{r.games}</td>
+                      <td>{r.wins}</td>
+                      <td>{r.losses}</td>
+                      <td>{r.draws}</td>
+                      <td>{(r.win_rate * 100).toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {ratingGap.some((b) => b.games > 0) && (
+            <>
+              <h3>Performance by opponent strength</h3>
+              <div className="eval-graph">
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={ratingGap} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} domain={[0, 1]} />
+                    <Tooltip formatter={(v) => `${(Number(v) * 100).toFixed(1)}%`} />
+                    <Bar dataKey="win_rate" name="Win rate" fill="#4f8ef7" isAnimationActive={false} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
 
           <h3>Strength model — predicted rating from play quality</h3>
           <div className="page-toolbar">

@@ -26,7 +26,10 @@ def test_compute_profile_only_counts_the_tracked_users_own_moves(db_session):
         white_username="opponent2",
         black_username="MichaelBottega",
     )
-    make_move(db_session, game2, ply=1, side_to_move="black", classification="mistake", centipawn_loss=120, game_phase="middlegame")
+    make_move(
+        db_session, game2, ply=1, side_to_move="black", classification="mistake", centipawn_loss=120,
+        game_phase="middlegame", blunder_tag="hung_material",
+    )
 
     profile = compute_profile(db_session)
 
@@ -39,6 +42,7 @@ def test_compute_profile_only_counts_the_tracked_users_own_moves(db_session):
     assert profile.color_avg_cp_loss["white"] == 150.0
     assert profile.color_avg_cp_loss["black"] == 120.0
     assert profile.time_class_breakdown == {"blitz": 2}
+    assert profile.blunder_tag_counts == {"hung_material": 1}  # game1's untagged blunder must not appear
 
     openings = {o.opening_name: o for o in profile.top_openings}
     assert openings["Italian Game"].wins == 1

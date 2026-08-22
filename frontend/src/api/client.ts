@@ -8,9 +8,12 @@ import type {
   GameDetail,
   GameSummary,
   ProfileSummary,
+  RatingGapBucket,
+  RivalRecord,
   StrengthPrediction,
   StrengthTrainStatus,
   SyncStatus,
+  TimePressureBucket,
 } from "../types/game";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -38,6 +41,9 @@ export const api = {
   analysisStatus: () => request<AnalysisStatus>("/api/analysis/status"),
 
   getProfile: () => request<ProfileSummary>("/api/profile"),
+  getRivals: () => request<RivalRecord[]>("/api/matchups/rivals"),
+  getRatingGap: () => request<RatingGapBucket[]>("/api/matchups/rating-gap"),
+  getTimePressure: () => request<TimePressureBucket[]>("/api/time-pressure"),
 
   startStrengthTraining: () => request<{ message: string }>("/api/strength/train", { method: "POST" }),
   strengthTrainingStatus: () => request<StrengthTrainStatus>("/api/strength/status"),

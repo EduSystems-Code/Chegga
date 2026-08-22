@@ -24,6 +24,9 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.models.game import Game
 from app.models.move_analysis import MoveAnalysis
+from app.services.blunder_tagger import tag_move
+from app.services.clock_parser import parse_clocks_by_ply
+from app.services.time_pressure_service import band_for
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,7 @@ def analyze_game(engine: chess.engine.SimpleEngine, game_row: Game, settings: Se
         raise ValueError(f"Could not parse stored PGN for game {game_row.id}")
 
     moves = list(parsed.mainline_moves())
+    clocks_by_ply = parse_clocks_by_ply(parsed)
     limit = chess.engine.Limit(depth=settings.stockfish_depth, time=settings.stockfish_movetime_ms / 1000)
     multipv = settings.stockfish_multipv
 
@@ -111,24 +115,43 @@ def analyze_game(engine: chess.engine.SimpleEngine, game_row: Game, settings: Se
         )
         best_move = best_line.get("pv", [None])[0]
 
+        ply = i + 1
+        side_to_move = "white" if board_before.turn == chess.WHITE else "black"
+        san = board_before.san(move)
+        best_move_san = board_before.san(best_move) if best_move else None
+        classification = classify(centipawn_loss)
+        clock_seconds = clocks_by_ply.get(ply)
+
         results.append(
             MoveAnalysis(
                 game_id=game_row.id,
-                ply=i + 1,
-                side_to_move="white" if board_before.turn == chess.WHITE else "black",
+                ply=ply,
+                side_to_move=side_to_move,
                 fen_before=board_before.fen(),
-                san=board_before.san(move),
+                san=san,
                 uci=move.uci(),
                 eval_before_cp=best_cp_white,
                 eval_before_mate=best_mate_white,
                 eval_after_cp=after_cp_white,
                 eval_after_mate=after_mate_white,
                 best_move_uci=best_move.uci() if best_move else None,
-                best_move_san=board_before.san(best_move) if best_move else None,
+                best_move_san=best_move_san,
                 centipawn_loss=centipawn_loss,
                 move_rank=move_rank,
-                classification=classify(centipawn_loss),
-                game_phase=game_phase(i + 1, board_before),
+                classification=classification,
+                game_phase=game_phase(ply, board_before),
+                blunder_tag=tag_move(
+                    fen_before=board_before.fen(),
+                    uci=move.uci(),
+                    san=san,
+                    best_move_san=best_move_san,
+                    eval_before_mate=best_mate_white,
+                    eval_after_mate=after_mate_white,
+                    side_to_move=side_to_move,
+                    classification=classification,
+                ),
+                clock_seconds=clock_seconds,
+                time_pressure_band=band_for(clock_seconds, game_row.time_control),
             )
         )
 

@@ -37,4 +37,5 @@ class ProfileSummaryOut(BaseModel):
     color_avg_cp_loss: dict[str, float]
     time_class_breakdown: dict[str, int]
     top_openings: list[OpeningStatOut]
+    blunder_tag_counts: dict[str, int]
     monthly_trend: list[MonthlyStatOut]

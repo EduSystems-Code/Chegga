@@ -30,6 +30,8 @@ export interface MoveAnalysis {
   move_rank: number | null;
   classification: string;
   game_phase: string;
+  blunder_tag: string | null;
+  clock_seconds: number | null;
 }
 
 export interface GameDetail extends GameSummary {
@@ -78,7 +80,33 @@ export interface ProfileSummary {
   color_avg_cp_loss: Record<string, number>;
   time_class_breakdown: Record<string, number>;
   top_openings: OpeningStat[];
+  blunder_tag_counts: Record<string, number>;
   monthly_trend: MonthlyStat[];
+}
+
+export interface RivalRecord {
+  opponent: string;
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number;
+}
+
+export interface RatingGapBucket {
+  label: string;
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number;
+}
+
+export interface TimePressureBucket {
+  label: string;
+  moves: number;
+  avg_centipawn_loss: number;
+  blunder_rate: number;
 }
 
 export interface StrengthTrainStatus {
