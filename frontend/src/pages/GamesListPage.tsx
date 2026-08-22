@@ -4,10 +4,13 @@ import { api } from "../api/client";
 import type { AnalysisStatus, GameSummary, SyncStatus } from "../types/game";
 
 const ANALYSIS_BATCH_SIZE = 50;
+const PAGE_SIZE = 50;
 
 export default function GamesListPage() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
@@ -15,10 +18,25 @@ export default function GamesListPage() {
   const loadGames = () => {
     setLoading(true);
     api
-      .listGames()
-      .then(setGames)
+      .listGames(0, PAGE_SIZE)
+      .then((page) => {
+        setGames(page);
+        setHasMore(page.length === PAGE_SIZE);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
+  };
+
+  const loadMore = () => {
+    setLoadingMore(true);
+    api
+      .listGames(games.length, PAGE_SIZE)
+      .then((page) => {
+        setGames((prev) => [...prev, ...page]);
+        setHasMore(page.length === PAGE_SIZE);
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoadingMore(false));
   };
 
   const loadAnalysisStatus = () => {
@@ -110,6 +128,13 @@ export default function GamesListPage() {
             })}
           </tbody>
         </table>
+      )}
+      {hasMore && games.length > 0 && (
+        <div className="page-toolbar">
+          <button onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? "Loading…" : `Load ${PAGE_SIZE} more`}
+          </button>
+        </div>
       )}
     </div>
   );

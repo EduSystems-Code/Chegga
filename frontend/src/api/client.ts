@@ -29,7 +29,7 @@ const postJson = <T>(path: string, body: unknown) =>
 
 export const api = {
   health: () => request<{ status: string }>("/api/health"),
-  listGames: () => request<GameSummary[]>("/api/games"),
+  listGames: (offset = 0, limit = 50) => request<GameSummary[]>(`/api/games?offset=${offset}&limit=${limit}`),
   getGame: (id: number) => request<GameDetail>(`/api/games/${id}`),
   startSync: () => request<{ message: string }>("/api/sync", { method: "POST" }),
   syncStatus: () => request<SyncStatus>("/api/sync/status"),
