@@ -25,7 +25,14 @@ a { color: var(--accent); }
 .app-header {
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 24px;
 }
+
+.app-nav { display: flex; gap: 16px; }
+.app-nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+.app-nav a:hover { color: var(--text); }
 
 .app-title {
   font-size: 1.3rem;
@@ -100,3 +107,111 @@ th { color: var(--muted); font-weight: 600; }
 }
 
 .move-list { margin-top: 12px; }
+
+h3 { margin-top: 28px; margin-bottom: 10px; font-size: 1rem; color: var(--muted); }
+h4 { margin: 0 0 8px; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.stat-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.stat-value { font-size: 1.4rem; font-weight: 700; }
+.stat-label { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+
+.classification-bar {
+  display: flex;
+  height: 32px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.classification-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2px;
+  color: #10121a;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* --- Board (drills) --- */
+
+.board {
+  display: inline-block;
+  border: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+.board-row { display: flex; }
+
+.board-square {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.board-square.light { background: #5b6373; }
+.board-square.dark { background: #262a33; }
+.board-piece { user-select: none; }
+.board-piece.piece-white { color: #f5f5f0; filter: drop-shadow(0 0 1.5px #10121a) drop-shadow(0 0 1.5px #10121a); }
+.board-piece.piece-black { color: #10121a; filter: drop-shadow(0 0 1.5px #f5f5f0) drop-shadow(0 0 1.5px #f5f5f0); }
+
+.drill-choices {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.drill-choice {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  min-width: 64px;
+}
+
+.drill-choice.correct { background: var(--win); color: #10121a; border-color: var(--win); }
+.drill-choice.incorrect { background: var(--loss); color: #10121a; border-color: var(--loss); }
+.drill-choice:disabled { cursor: default; opacity: 1; }
+
+.drill-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* --- Coaching --- */
+
+.coaching-report {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.coaching-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 12px 0;
+}
+
+.coaching-columns ul { margin: 6px 0 0; padding-left: 18px; }

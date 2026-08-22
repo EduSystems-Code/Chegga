@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -39,6 +39,13 @@ class MoveAnalysis(Base):
     # labels. See engine_analysis.classify() for the tunable cutoffs.
     classification: Mapped[str] = mapped_column(String(16))
     game_phase: Mapped[str] = mapped_column(String(16))  # opening/middlegame/endgame
+
+    # Drill generator state. Null = never drilled. False = shown and missed
+    # (stays eligible, resurfaces). True = solved -- excluded from future
+    # drills so practice always pushes toward what's still unfixed rather
+    # than re-showing the same handful of blunders forever.
+    drilled_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    drilled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

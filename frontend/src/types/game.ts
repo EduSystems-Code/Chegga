@@ -43,3 +43,88 @@ export interface SyncStatus {
   games_added: number;
   last_error: string | null;
 }
+
+export interface OpeningStat {
+  opening_name: string;
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+export interface MonthlyStat {
+  year_month: string;
+  games: number;
+  avg_centipawn_loss: number;
+  blunder_rate: number;
+}
+
+export interface ProfileSummary {
+  games_analyzed: number;
+  total_moves: number;
+  avg_centipawn_loss: number;
+  classification_counts: Record<string, number>;
+  classification_rate: Record<string, number>;
+  phase_avg_cp_loss: Record<string, number>;
+  color_avg_cp_loss: Record<string, number>;
+  time_class_breakdown: Record<string, number>;
+  top_openings: OpeningStat[];
+  monthly_trend: MonthlyStat[];
+}
+
+export interface StrengthTrainStatus {
+  state: "idle" | "running" | "done" | "error";
+  n_samples: number | null;
+  cv_folds: number | null;
+  cv_mae: number | null;
+  cv_r2: number | null;
+  trained_at: string | null;
+  last_error: string | null;
+}
+
+export interface StrengthPrediction {
+  game_id: number;
+  end_time: number;
+  time_class: string;
+  actual_rating: number;
+  predicted_rating: number;
+}
+
+export interface Drill {
+  move_analysis_id: number;
+  fen: string;
+  side_to_move: "white" | "black";
+  game_id: number;
+  opponent: string;
+  choices: string[];
+}
+
+export interface DrillAttemptResult {
+  correct: boolean;
+  correct_san: string;
+}
+
+export interface DrillStats {
+  total_mistakes: number;
+  attempted: number;
+  solved: number;
+}
+
+export interface CoachingReport {
+  id: number;
+  model: string;
+  games_analyzed_count: number;
+  headline: string;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  focus_area: string;
+  opening_notes: string;
+  encouragement: string;
+  created_at: string;
+}
+
+export interface CoachingStatus {
+  state: "idle" | "running" | "done" | "error";
+  last_error: string | null;
+}

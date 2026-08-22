@@ -5,15 +5,16 @@ backend/.venv/
 backend/.env
 backend/.pytest_cache/
 
-# Data (sqlite db is local-only; the directory itself is tracked via .gitkeep)
+# Data (sqlite db and the trained strength model are local-only,
+# regenerable from real play data / a training run; the directory itself
+# is tracked via .gitkeep)
 backend/data/*.db
 backend/data/*.db-wal
 backend/data/*.db-shm
 backend/data/*.db-journal
+backend/data/*.joblib
+backend/data/*_meta.json
 !backend/data/.gitkeep
-
-# ML artifacts (Phase 3+)
-backend/app/models_store/
 
 # Stockfish binary -- downloaded, not committed (platform-specific)
 backend/vendor/

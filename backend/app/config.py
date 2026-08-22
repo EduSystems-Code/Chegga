@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
 
     database_url: str = "sqlite:///./data/chegga.db"
+    # Where the trained strength model + its metadata are persisted. Kept
+    # configurable (not a hardcoded "data/..." path in strength_model.py)
+    # for the same reason database_url is: tests must never write into --
+    # or silently overwrite -- the real trained model on disk.
+    strength_model_dir: str = "data"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
