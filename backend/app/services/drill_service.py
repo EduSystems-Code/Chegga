@@ -1,10 +1,10 @@
 """Selects practice positions from the user's own unresolved mistakes and
 blunders ("the ability to train") and records the outcome of an attempt.
 
-A drill is multiple-choice (find Stockfish's best move among a few
-options) rather than free-form board input -- this needed no drag-and-drop
-board component to be a genuine recognition exercise, and the frontend
-already has no chess-input widget to build one on top of.
+Answers are entered by dragging a piece on a real board (chess.js validates
+legality and produces SAN client-side); the backend's job is just to grade
+whatever SAN comes back against the engine's best move -- record_attempt
+doesn't care whether that SAN came from a drag or (previously) a button.
 
 drilled_correct is tri-state on MoveAnalysis: None = never drilled, False =
 shown and missed (stays eligible -- it resurfaces until solved), True =
@@ -12,7 +12,7 @@ solved (excluded going forward). This is the only state a drill needs, so
 it lives directly on the row being drilled rather than a separate table.
 """
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import chess
@@ -23,7 +23,6 @@ from app.models.game import Game
 from app.models.move_analysis import MoveAnalysis
 
 _DRILL_CLASSIFICATIONS = ("blunder", "mistake")
-_NUM_CHOICES = 4
 
 
 @dataclass
@@ -34,7 +33,16 @@ class DrillPosition:
     game_id: int
     opponent: str
     played_san: str
-    choices: list[str]  # SAN, shuffled -- includes the correct answer
+    opening_name: str | None
+    # SAN move list for the whole game, ply 1 .. (this move's ply - 1) --
+    # "the notation of the game to get you to this position." Both colors,
+    # in order, so the frontend can pair them into "1. e4 e5 2. Nf3 ...".
+    move_history: list[str] = field(default_factory=list)
+    # Classification counts for the tracked user's own moves in THIS game,
+    # ply 1 through this move's ply inclusive -- the same shape as
+    # ProfileSummary.classification_counts, just scoped to one game's
+    # prefix instead of the whole account, for the accuracy bar.
+    accuracy: dict[str, int] = field(default_factory=dict)
 
 
 def _own_mistakes_query(db: Session):
@@ -66,25 +74,29 @@ def next_drill(db: Session, rng: random.Random | None = None) -> DrillPosition |
     weights = [max(1, move.centipawn_loss) for move, _ in rows]
     move, game = rng.choices(rows, weights=weights, k=1)[0]
 
-    board = chess.Board(move.fen_before)
-    legal = list(board.legal_moves)
-    played_move = chess.Move.from_uci(move.uci)
-    best_move = chess.Move.from_uci(move.best_move_uci) if move.best_move_uci else None
-
-    choice_moves = {played_move}
-    if best_move:
-        choice_moves.add(best_move)
-    distractor_pool = [m for m in legal if m not in choice_moves]
-    rng.shuffle(distractor_pool)
-    for m in distractor_pool:
-        if len(choice_moves) >= _NUM_CHOICES:
-            break
-        choice_moves.add(m)
-
-    choice_sans = [board.san(m) for m in choice_moves]
-    rng.shuffle(choice_sans)
-
     opponent = game.black_username if game.user_color == "white" else game.white_username
+
+    history_rows = list(
+        db.scalars(
+            select(MoveAnalysis)
+            .where(MoveAnalysis.game_id == game.id, MoveAnalysis.ply < move.ply)
+            .order_by(MoveAnalysis.ply)
+        )
+    )
+    move_history = [m.san for m in history_rows]
+
+    own_rows_so_far = list(
+        db.scalars(
+            select(MoveAnalysis).where(
+                MoveAnalysis.game_id == game.id,
+                MoveAnalysis.side_to_move == game.user_color,
+                MoveAnalysis.ply <= move.ply,
+            )
+        )
+    )
+    accuracy: dict[str, int] = {}
+    for m in own_rows_so_far:
+        accuracy[m.classification] = accuracy.get(m.classification, 0) + 1
 
     return DrillPosition(
         move_analysis_id=move.id,
@@ -93,7 +105,9 @@ def next_drill(db: Session, rng: random.Random | None = None) -> DrillPosition |
         game_id=game.id,
         opponent=opponent,
         played_san=move.san,
-        choices=choice_sans,
+        opening_name=game.opening_name,
+        move_history=move_history,
+        accuracy=accuracy,
     )
 
 

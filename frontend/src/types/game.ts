@@ -133,7 +133,9 @@ export interface Drill {
   side_to_move: "white" | "black";
   game_id: number;
   opponent: string;
-  choices: string[];
+  opening_name: string | null;
+  move_history: string[];
+  accuracy: Record<string, number>;
 }
 
 export interface DrillAttemptResult {

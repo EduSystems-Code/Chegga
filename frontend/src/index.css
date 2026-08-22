@@ -149,6 +149,8 @@ h4 { margin: 0 0 8px; }
 
 /* --- Board (drills) --- */
 
+.board-wrap { display: inline-block; }
+
 .board {
   display: inline-block;
   border: 1px solid var(--border);
@@ -165,31 +167,49 @@ h4 { margin: 0 0 8px; }
   justify-content: center;
   font-size: 30px;
   line-height: 1;
+  position: relative;
 }
 
 .board-square.light { background: #5b6373; }
 .board-square.dark { background: #262a33; }
+
+/* A dot for an empty legal-target square, a ring around one that's occupied
+   (a capture) -- same convention most chess UIs use, via a radial gradient
+   rather than a second element per square. */
+.board-square.legal-target::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(79, 142, 247, 0.55) 18%, transparent 20%);
+  pointer-events: none;
+}
+.board-square.legal-target:has(.board-piece)::after {
+  background: radial-gradient(circle, transparent 60%, rgba(79, 142, 247, 0.65) 62%, transparent 72%);
+}
+.board-square.drag-source { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 .board-piece { user-select: none; }
 .board-piece.piece-white { color: #f5f5f0; filter: drop-shadow(0 0 1.5px #10121a) drop-shadow(0 0 1.5px #10121a); }
 .board-piece.piece-black { color: #10121a; filter: drop-shadow(0 0 1.5px #f5f5f0) drop-shadow(0 0 1.5px #f5f5f0); }
+.board-piece.draggable { cursor: grab; }
+.board-piece.draggable:active { cursor: grabbing; }
 
-.drill-choices {
+.promotion-picker {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 12px 0;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
 }
-
-.drill-choice {
+.promotion-picker button {
+  font-size: 22px;
+  padding: 4px 10px;
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
-  min-width: 64px;
 }
 
-.drill-choice.correct { background: var(--win); color: #10121a; border-color: var(--win); }
-.drill-choice.incorrect { background: var(--loss); color: #10121a; border-color: var(--loss); }
-.drill-choice:disabled { cursor: default; opacity: 1; }
+.drill-notation { color: var(--muted); font-family: ui-monospace, monospace; }
+.drill-hint { font-size: 0.85rem; }
 
 .drill-result {
   display: flex;

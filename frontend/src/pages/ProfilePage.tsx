@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api/client";
+import { CLASS_COLOR, CLASSIFICATION_ORDER } from "../lib/classification";
 import type {
   CoachingReport,
   ProfileSummary,
@@ -22,8 +23,8 @@ import type {
   TimePressureBucket,
 } from "../types/game";
 
-// Same idea as CLASS_COLOR below, one color per blunder_tag so the same
-// pattern reads consistently wherever it shows up.
+// Same idea as CLASS_COLOR (../lib/classification), one color per
+// blunder_tag so the same pattern reads consistently wherever it shows up.
 const TAG_LABEL: Record<string, string> = {
   missed_mate: "missed mate",
   allowed_mate: "allowed mate",
@@ -37,19 +38,6 @@ const TAG_COLOR: Record<string, string> = {
   hung_material: "#fb8c00",
   missed_capture: "#ffb300",
   positional: "#9aa2b1",
-};
-
-const CLASSIFICATION_ORDER = ["best", "excellent", "good", "inaccuracy", "mistake", "blunder"];
-
-// Same palette as MoveList's per-move badges, so a color means the same
-// thing whether you're looking at one game or the aggregate profile.
-const CLASS_COLOR: Record<string, string> = {
-  best: "#4caf50",
-  excellent: "#8bc34a",
-  good: "#cddc39",
-  inaccuracy: "#ffb300",
-  mistake: "#fb8c00",
-  blunder: "#e53935",
 };
 
 function StatCard({ label, value }: { label: string; value: string | number }) {

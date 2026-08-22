@@ -34,8 +34,27 @@ def test_next_drill_only_offers_the_users_own_unsolved_mistakes(db_session):
 
     assert drill is not None
     assert drill.side_to_move == "white"
-    assert "d4" in drill.choices  # the correct answer must always be offered
-    assert len(drill.choices) == len(set(drill.choices))  # no duplicate options
+
+
+def test_next_drill_includes_notation_and_accuracy_up_to_that_point(db_session):
+    game = make_game(db_session, id=1, user_color="white", opening_name="Italian Game")
+    make_move(db_session, game, ply=1, side_to_move="white", san="e4", classification="best", centipawn_loss=0, game_phase="opening")
+    make_move(db_session, game, ply=2, side_to_move="black", san="e5", classification="best", centipawn_loss=0, game_phase="opening")
+    make_move(db_session, game, ply=3, side_to_move="white", san="Nf3", classification="excellent", centipawn_loss=15, game_phase="opening")
+    make_move(db_session, game, ply=4, side_to_move="black", san="Nc6", classification="best", centipawn_loss=0, game_phase="opening")
+    # ply 5: the actual blunder under test
+    blunder = _make_blunder(db_session, game, ply=5, side_to_move="white", san="Bxf7+", fen_before=START_FEN)
+
+    drill = next_drill(db_session, rng=random.Random(0))
+
+    assert drill is not None
+    assert drill.move_analysis_id == blunder.id
+    assert drill.opening_name == "Italian Game"
+    # notation UP TO the drill position -- the blunder itself (ply 5) must not be included
+    assert drill.move_history == ["e4", "e5", "Nf3", "Nc6"]
+    # accuracy covers the user's own moves through and including this blunder (ply 1, 3, 5) --
+    # black's moves (ply 2, 4) must not count toward it
+    assert drill.accuracy == {"best": 1, "excellent": 1, "blunder": 1}
 
 
 def test_next_drill_returns_none_when_nothing_eligible(db_session):

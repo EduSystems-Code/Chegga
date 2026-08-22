@@ -9,7 +9,9 @@ class DrillOut(BaseModel):
     side_to_move: str
     game_id: int
     opponent: str
-    choices: list[str]
+    opening_name: str | None
+    move_history: list[str]
+    accuracy: dict[str, int]
 
 
 class DrillAttemptIn(BaseModel):
