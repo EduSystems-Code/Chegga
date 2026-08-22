@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { GameSummary, SyncStatus } from "../types/game";
+import type { AnalysisStatus, GameSummary, SyncStatus } from "../types/game";
+
+const ANALYSIS_BATCH_SIZE = 50;
 
 export default function GamesListPage() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
 
   const loadGames = () => {
     setLoading(true);
@@ -18,7 +21,12 @@ export default function GamesListPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadAnalysisStatus = () => {
+    api.analysisStatus().then(setAnalysisStatus).catch(() => {});
+  };
+
   useEffect(loadGames, []);
+  useEffect(loadAnalysisStatus, []);
 
   const handleSync = async () => {
     await api.startSync();
@@ -28,8 +36,21 @@ export default function GamesListPage() {
       if (status.state === "done" || status.state === "error") {
         clearInterval(poll);
         loadGames();
+        loadAnalysisStatus(); // a sync can pull in new unanalyzed games -- refresh the pending count too
       }
     }, 1500);
+  };
+
+  const handleAnalyze = async () => {
+    await api.startAnalysis(ANALYSIS_BATCH_SIZE);
+    const poll = setInterval(async () => {
+      const status = await api.analysisStatus();
+      setAnalysisStatus(status);
+      if (status.state === "done" || status.state === "error") {
+        clearInterval(poll);
+        loadGames();
+      }
+    }, 2000);
   };
 
   if (loading) return <p className="status">Loading games…</p>;
@@ -44,6 +65,18 @@ export default function GamesListPage() {
             {syncStatus.state}
             {syncStatus.state === "done" && ` — ${syncStatus.games_added} new games`}
             {syncStatus.state === "error" && `: ${syncStatus.last_error}`}
+          </span>
+        )}
+      </div>
+      <div className="page-toolbar">
+        <button onClick={handleAnalyze} disabled={analysisStatus?.state === "running" || analysisStatus?.pending_games === 0}>
+          {analysisStatus?.state === "running" ? "Analyzing…" : `Analyze next ${ANALYSIS_BATCH_SIZE} with Stockfish`}
+        </button>
+        {analysisStatus && (
+          <span className="sync-note">
+            {analysisStatus.analyzed_games} / {analysisStatus.total_games} analyzed
+            {analysisStatus.pending_games > 0 && ` (${analysisStatus.pending_games} pending)`}
+            {analysisStatus.state === "error" && ` — ${analysisStatus.last_error}`}
           </span>
         )}
       </div>

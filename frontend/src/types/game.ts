@@ -44,6 +44,15 @@ export interface SyncStatus {
   last_error: string | null;
 }
 
+export interface AnalysisStatus {
+  state: "idle" | "running" | "done" | "error";
+  games_analyzed: number;
+  last_error: string | null;
+  total_games: number;
+  analyzed_games: number;
+  pending_games: number;
+}
+
 export interface OpeningStat {
   opening_name: string;
   games: number;

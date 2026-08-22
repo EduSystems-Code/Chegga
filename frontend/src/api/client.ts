@@ -1,4 +1,5 @@
 import type {
+  AnalysisStatus,
   CoachingReport,
   CoachingStatus,
   Drill,
@@ -32,6 +33,9 @@ export const api = {
   getGame: (id: number) => request<GameDetail>(`/api/games/${id}`),
   startSync: () => request<{ message: string }>("/api/sync", { method: "POST" }),
   syncStatus: () => request<SyncStatus>("/api/sync/status"),
+
+  startAnalysis: (limit: number) => request<{ message: string }>(`/api/analysis/run?limit=${limit}`, { method: "POST" }),
+  analysisStatus: () => request<AnalysisStatus>("/api/analysis/status"),
 
   getProfile: () => request<ProfileSummary>("/api/profile"),
 
