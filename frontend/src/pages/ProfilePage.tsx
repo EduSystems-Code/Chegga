@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { api } from "../api/client";
 import { CLASS_COLOR, CLASSIFICATION_ORDER } from "../lib/classification";
+import { chartColors, chartTooltipStyle } from "../lib/theme";
 import type {
   CoachingReport,
   ProfileSummary,
@@ -33,11 +34,11 @@ const TAG_LABEL: Record<string, string> = {
   positional: "positional",
 };
 const TAG_COLOR: Record<string, string> = {
-  missed_mate: "#e53935",
-  allowed_mate: "#d81b60",
-  hung_material: "#fb8c00",
-  missed_capture: "#ffb300",
-  positional: "#9aa2b1",
+  missed_mate: "#f2555a",
+  allowed_mate: "#d9678f",
+  hung_material: "#e3a857",
+  missed_capture: "#f0be73",
+  positional: "#8a93a6",
 };
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
@@ -190,11 +191,11 @@ export default function ProfilePage() {
               <div className="eval-graph">
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={timePressure} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
-                    <Tooltip formatter={(v) => `${(Number(v) * 100).toFixed(1)}%`} />
-                    <Bar dataKey="blunder_rate" name="Blunder rate" fill="#e53935" isAnimationActive={false} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" opacity={0.6} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: chartColors.muted }} />
+                    <YAxis tick={{ fontSize: 11, fill: chartColors.muted }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
+                    <Tooltip {...chartTooltipStyle} formatter={(v) => `${(Number(v) * 100).toFixed(1)}%`} />
+                    <Bar dataKey="blunder_rate" name="Blunder rate" fill={chartColors.loss} radius={[4, 4, 0, 0]} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -205,11 +206,11 @@ export default function ProfilePage() {
           <div className="eval-graph">
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={profile.monthly_trend} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                <XAxis dataKey="year_month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Line type="monotone" dataKey="avg_centipawn_loss" name="Avg CP loss" stroke="#4f8ef7" dot strokeWidth={2} isAnimationActive={false} />
+                <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" opacity={0.6} />
+                <XAxis dataKey="year_month" tick={{ fontSize: 11, fill: chartColors.muted }} />
+                <YAxis tick={{ fontSize: 11, fill: chartColors.muted }} />
+                <Tooltip {...chartTooltipStyle} />
+                <Line type="monotone" dataKey="avg_centipawn_loss" name="Avg CP loss" stroke={chartColors.accent} dot strokeWidth={2} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -274,11 +275,11 @@ export default function ProfilePage() {
               <div className="eval-graph">
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={ratingGap} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} domain={[0, 1]} />
-                    <Tooltip formatter={(v) => `${(Number(v) * 100).toFixed(1)}%`} />
-                    <Bar dataKey="win_rate" name="Win rate" fill="#4f8ef7" isAnimationActive={false} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" opacity={0.6} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: chartColors.muted }} />
+                    <YAxis tick={{ fontSize: 11, fill: chartColors.muted }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} domain={[0, 1]} />
+                    <Tooltip {...chartTooltipStyle} formatter={(v) => `${(Number(v) * 100).toFixed(1)}%`} />
+                    <Bar dataKey="win_rate" name="Win rate" fill={chartColors.info} radius={[4, 4, 0, 0]} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -302,13 +303,13 @@ export default function ProfilePage() {
             <div className="eval-graph">
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={predictions} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                  <XAxis dataKey="game_id" tick={{ fontSize: 11 }} />
-                  <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="actual_rating" name="Actual rating" stroke="#4f8ef7" dot={false} strokeWidth={2} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="predicted_rating" name="Predicted from play quality" stroke="#4caf50" dot={false} strokeWidth={2} isAnimationActive={false} />
+                  <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" opacity={0.6} />
+                  <XAxis dataKey="game_id" tick={{ fontSize: 11, fill: chartColors.muted }} />
+                  <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11, fill: chartColors.muted }} />
+                  <Tooltip {...chartTooltipStyle} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: chartColors.muted }} />
+                  <Line type="monotone" dataKey="actual_rating" name="Actual rating" stroke={chartColors.info} dot={false} strokeWidth={2} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="predicted_rating" name="Predicted from play quality" stroke={chartColors.accent} dot={false} strokeWidth={2} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

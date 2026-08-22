@@ -1,13 +1,5 @@
+import { CLASS_COLOR } from "../lib/classification";
 import type { MoveAnalysis } from "../types/game";
-
-const CLASS_COLOR: Record<string, string> = {
-  best: "#4caf50",
-  excellent: "#8bc34a",
-  good: "#cddc39",
-  inaccuracy: "#ffb300",
-  mistake: "#fb8c00",
-  blunder: "#e53935",
-};
 
 export default function MoveList({ moves }: { moves: MoveAnalysis[] }) {
   return (

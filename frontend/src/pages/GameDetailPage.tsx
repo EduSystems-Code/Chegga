@@ -23,7 +23,8 @@ export default function GameDetailPage() {
   return (
     <div className="page">
       <h2>
-        vs {opponent} — {game.user_result} ({game.time_class})
+        vs <span className="text-accent">{opponent}</span> —{" "}
+        <span className={`result-${game.user_result}`}>{game.user_result}</span> ({game.time_class})
       </h2>
       {game.moves.length === 0 ? (
         <p className="status">Not analyzed yet. Run the analysis pipeline for this game.</p>
