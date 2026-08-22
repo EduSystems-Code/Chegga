@@ -20,6 +20,16 @@ const PROMOTION_CHOICES = [
   { piece: "n" as const, glyph: "♞" },
 ];
 
+const COORDS_STORAGE_KEY = "chegga-board-coords";
+
+function loadCoordsPref(): boolean {
+  try {
+    return localStorage.getItem(COORDS_STORAGE_KEY) !== "off"; // on by default
+  } catch {
+    return true; // storage blocked (private tab, locked-down browser) -- just default on
+  }
+}
+
 function squareAt(rankIdx: number, fileIdx: number): Square {
   // board()[0] is rank 8 (top row for White's-eye view); fileIdx 0 is the a-file.
   const rank = 8 - rankIdx;
@@ -40,6 +50,19 @@ export default function Board({ fen, interactive = false, onMove }: BoardProps) 
   const [dragFrom, setDragFrom] = useState<Square | null>(null);
   const [legalTargets, setLegalTargets] = useState<Square[]>([]);
   const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null);
+  const [showCoords, setShowCoords] = useState(loadCoordsPref);
+
+  const toggleCoords = () => {
+    setShowCoords((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(COORDS_STORAGE_KEY, next ? "on" : "off");
+      } catch {
+        // per-viewer convenience only -- fine if it doesn't persist
+      }
+      return next;
+    });
+  };
 
   // A new drill (new fen) means a fresh position -- reset the chess.js
   // instance and any in-flight drag/promotion state from the last one.
@@ -118,6 +141,8 @@ export default function Board({ fen, interactive = false, onMove }: BoardProps) 
                   onDragOver={(e) => { if (isLegalTarget) e.preventDefault(); }}
                   onDrop={(e) => { e.preventDefault(); handleDrop(square); }}
                 >
+                  {showCoords && rankIdx === 7 && <span className="board-coord board-coord-file">{FILES[fileIdx]}</span>}
+                  {showCoords && fileIdx === 0 && <span className="board-coord board-coord-rank">{8 - rankIdx}</span>}
                   {piece && (
                     <span
                       className={`board-piece ${piece.color === "w" ? "piece-white" : "piece-black"} ${draggable ? "draggable" : ""}`}
@@ -142,6 +167,9 @@ export default function Board({ fen, interactive = false, onMove }: BoardProps) 
           ))}
         </div>
       )}
+      <button type="button" className="board-coord-toggle secondary" onClick={toggleCoords}>
+        {showCoords ? "Hide" : "Show"} coordinates
+      </button>
     </div>
   );
 }
