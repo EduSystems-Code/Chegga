@@ -1,0 +1,909 @@
+/* Chegga Web — visual identity reused from Chegga's own frontend
+   (Chegga/frontend/src/index.css) per the Phase 5 decision: same design
+   language/tokens, new codebase, not a shared component library. */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0a0c10;
+  --panel: #12151b;
+  --panel-hover: #171b23;
+  --border: #232833;
+  --border-strong: #2e3542;
+  --text: #edeff3;
+  --muted: #8a93a6;
+  --muted-dim: #5c6478;
+
+  --accent: #e3a857;
+  --accent-strong: #f0be73;
+  --accent-ink: #1c1305;
+  --accent-wash: rgba(227, 168, 87, 0.12);
+
+  --win: #4ade80;
+  --loss: #f2555a;
+  --draw: #8a93a6;
+
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* Board theme -- CSS custom properties, not JS constants, so every
+     PlayBoard instance on the page (bot game, puzzle, vision trainer,
+     drills) reskins together from one setting. See boardTheme.ts.
+     Default is a classic tan board (the same light/dark values lichess's
+     own default "brown" board theme uses) rather than the app's dark
+     navy squares -- a deliberate, requested departure from the rest of
+     the dark UI, not an oversight. */
+  --board-square-light: #f0d9b5;
+  --board-square-dark: #b58863;
+  --board-frame: #5c7a52; /* warm sage/felt green -- complements tan/wood the way a card-table frame classically does */
+
+  font-family: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+h1 {
+  font-size: 1.7rem;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 14px;
+}
+
+h3 {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.tagline {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 32px;
+}
+
+.text-accent {
+  color: var(--accent-strong);
+}
+
+section.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+form.row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+input[type="text"],
+input[type="number"] {
+  flex: 1;
+  min-width: 160px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+}
+
+select {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+}
+
+label {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+button {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 9px 16px;
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+button:hover {
+  background: var(--accent-strong);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A <label> made to look/act like a button, for a styled file-input
+   trigger -- real <input type="file"> elements can't be restyled directly,
+   so this wraps a hidden input instead (see the export/import UI). */
+.button-like {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 9px 16px;
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+.button-like:hover {
+  background: var(--accent-strong);
+}
+
+.status-line {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-family: var(--font-mono);
+  margin: 0;
+  white-space: pre-wrap;
+}
+.status-line.status-error {
+  color: var(--loss);
+}
+.status-line.status-ok {
+  color: var(--win);
+}
+
+pre.log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 14px;
+  text-align: center;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.stat-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin-top: 4px;
+}
+
+.classification-bar {
+  display: flex;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.classification-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2px;
+  color: #10121a;
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  margin-bottom: 24px;
+  /* `display:block` on a wide table lets it scroll horizontally within its
+     own box on a narrow screen instead of forcing the whole page to scroll
+     sideways -- no verified-in-real-browser check has ever been run at
+     phone width, so this is a defensive baseline, not a full audit. */
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+td {
+  font-variant-numeric: tabular-nums;
+}
+.result-win {
+  color: var(--win);
+  font-weight: 600;
+}
+.result-loss {
+  color: var(--loss);
+  font-weight: 600;
+}
+.result-draw {
+  color: var(--draw);
+  font-weight: 600;
+}
+
+.collapsible summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+
+/* ================= Opening explorer board ================= */
+
+.opening-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.opening-tabs button.tab {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border-strong);
+  font-weight: 500;
+}
+.opening-tabs button.tab.active {
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+.opening-board-block {
+  margin-bottom: 8px;
+}
+
+.opening-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.opening-board-header h3 {
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.95rem;
+  color: var(--text);
+  font-family: var(--font-display);
+}
+
+.opening-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.opening-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.opening-legend-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+}
+.opening-legend-ramp {
+  display: inline-block;
+  width: 70px;
+  height: 8px;
+  border-radius: 4px;
+  /* neutral opacity ramp -- color now carries move quality, not
+     frequency, so this legend is grayscale-on-accent rather than hued. */
+  background: linear-gradient(90deg, rgba(227, 168, 87, 0.15), rgba(227, 168, 87, 0.95));
+}
+
+.opening-legend-quality {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  gap: 4px 10px;
+}
+.opening-legend-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+.opening-table-toggle {
+  margin-top: 4px;
+}
+.opening-table-toggle summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-bottom: 6px;
+}
+.opening-table-toggle table {
+  margin-bottom: 8px;
+}
+
+/* ================= Move-by-move heatmap stepper ================= */
+
+.depth-stepper {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.depth-stepper button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+}
+.depth-stepper button:hover:not(:disabled) {
+  background: var(--panel-hover);
+}
+.depth-label {
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-size: 0.88rem;
+  min-width: 110px;
+  text-align: center;
+}
+
+/* ================= Cheat sheet ================= */
+/* Original layout/copy — see cheatSheet.ts's header comment. Board squares
+   use Chegga's own dark/gold tokens, not Chess.com's green board skin. */
+
+.cs-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.cs-intro {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+.cs-h3 {
+  font-family: var(--font-display);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 1.02rem;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.cs-section p,
+.cs-section li {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+.cs-section strong {
+  color: var(--text);
+}
+
+.cs-list {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.cs-list li {
+  margin-bottom: 4px;
+}
+
+.cs-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: 208px;
+  height: 208px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+
+.cs-sq {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+}
+.cs-light {
+  background: var(--panel-hover);
+}
+.cs-dark {
+  background: var(--bg);
+}
+.cs-hi {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.cs-piece {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text);
+  user-select: none;
+}
+
+.cs-board-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.cs-board-caption {
+  color: var(--muted);
+  font-size: 0.84rem;
+  max-width: 320px;
+  margin: 0;
+}
+
+.cs-piece-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+.cs-piece-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+.cs-piece-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 0.94rem;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.cs-piece-item-head .cs-piece {
+  font-size: 22px;
+  color: var(--accent-strong);
+}
+.cs-piece-item .cs-board {
+  width: 160px;
+  height: 160px;
+  margin-bottom: 10px;
+}
+.cs-piece-item .cs-piece {
+  font-size: 16px;
+}
+
+.cs-idea-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+.cs-idea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+.cs-idea h4 {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  color: var(--accent-strong);
+  margin: 0 0 6px;
+}
+.cs-idea p {
+  margin: 0;
+}
+
+/* ================= Play vs bot board ================= */
+
+.play-board-wrap {
+  position: relative;
+  display: inline-block;
+  background: var(--board-frame);
+  padding: 16px;
+  border-radius: var(--radius-lg);
+}
+
+.play-board {
+  display: grid;
+  grid-template-columns: repeat(8, 84px);
+  grid-template-rows: repeat(8, 84px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  user-select: none;
+}
+
+.play-square {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none; /* so dragging a piece on touch doesn't also scroll the page */
+}
+
+.play-heatmap-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.play-arrow-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Warm classic piece treatment, matched to the tan board: ivory/cream for
+   White, deep espresso brown for Black -- a real color-scheme update
+   from the earlier "icy" blue-on-blue gradient (both sides read as
+   different colors now, not two shades of the same hue), requested
+   directly rather than reusing Chegga's own frontend treatment this
+   time. */
+.play-piece {
+  font-size: 58px;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.play-piece-white {
+  background-image: linear-gradient(160deg, #fffaf0 15%, #e8d9bd 85%);
+  -webkit-text-stroke: 1px #8b6f47;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.play-piece-black {
+  background-image: linear-gradient(160deg, #4a3520 15%, #241608 85%);
+  -webkit-text-stroke: 1.5px #2b1c10;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+.play-legal-dot {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(227, 168, 87, 0.55);
+  pointer-events: none;
+}
+
+.play-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  font-size: 70px; /* slightly larger than the resting piece -- the "lifted" feel chess.com uses */
+  line-height: 1;
+  transform: translate(-50%, -50%) scale(1.05);
+  pointer-events: none;
+  z-index: 1000;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+}
+
+.play-promo-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 16, 0.7);
+}
+.play-promo-picker {
+  display: flex;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+.play-promo-btn {
+  font-size: 44px;
+  padding: 8px 14px;
+  background: var(--bg);
+  color: #e8ecf5;
+  border: 1px solid var(--border-strong);
+}
+.play-promo-btn:hover {
+  background: var(--panel-hover);
+}
+
+.play-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.play-elo-value {
+  font-family: var(--font-mono);
+  color: var(--accent-strong);
+  font-weight: 600;
+  min-width: 90px;
+}
+input[type="range"] {
+  accent-color: var(--accent);
+  width: 200px;
+}
+
+.play-layout {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.play-sidebar {
+  flex: 1;
+  min-width: 200px;
+}
+.play-move-list {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text);
+  max-height: 448px;
+  overflow-y: auto;
+}
+.play-move-list .move-pair {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+}
+.play-move-list .move-num {
+  color: var(--muted);
+  min-width: 24px;
+}
+
+.play-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 0.86rem;
+}
+.play-checkbox-label input {
+  accent-color: var(--accent);
+}
+
+/* ================= Insights ================= */
+
+.insights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.insight-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* ================= Game patterns ================= */
+
+.rating-chart-block {
+  margin-bottom: 18px;
+}
+.rating-chart-block h4 {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  color: var(--text);
+  margin: 0 0 8px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ================= Collapsible cards ================= */
+
+.card-heading-collapsible {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+}
+.card-heading-collapsible:hover {
+  color: var(--accent-strong);
+}
+.card-chevron {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-left: 10px;
+}
+
+/* ================= Live analysis, resume banner, post-game report ================= */
+
+.eval-bar-wrap {
+  position: relative;
+  display: flex;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  margin-bottom: 8px;
+}
+.eval-bar-white {
+  background: #e8ecf5;
+}
+.eval-bar-black {
+  background: #161a22;
+}
+.eval-bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+}
+.eval-lines {
+  margin-bottom: 12px;
+}
+
+#resume-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+#resume-banner button {
+  padding: 5px 12px;
+  font-size: 0.8rem;
+}
+
+#post-game-report {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+#post-game-report h3 {
+  margin-bottom: 10px;
+}
+#post-game-report button {
+  margin-top: 10px;
+}
+
+/* ================= Mobile breakpoint =================
+   No real device/viewport testing has been done on this app (six phases
+   of verification were all desktop-viewport screenshots) -- this is a
+   defensive baseline for the most concrete overflow bug found by
+   inspection: the play board is a fixed 8x84px (672px) grid, wider than
+   almost any phone viewport, which would force the whole page to scroll
+   sideways. Shrinking it (and the piece glyphs with it) on narrow
+   viewports is a real, contained fix; it is not a substitute for actually
+   loading this on a phone and looking. */
+@media (max-width: 600px) {
+  .wrap {
+    padding: 24px 12px 60px;
+  }
+  .play-board {
+    grid-template-columns: repeat(8, 42px);
+    grid-template-rows: repeat(8, 42px);
+  }
+  .play-piece {
+    font-size: 30px;
+  }
+  .play-board-wrap {
+    padding: 8px;
+  }
+  input[type="range"] {
+    width: 140px;
+  }
+}
