@@ -1597,3 +1597,4 @@ async function computeStrengthForGame(chessComUuid: string) {
     await refreshProfile();
   },
 };
+// Deployed via Vercel, connected to GitHub for auto-deploy (2026-08-26).
