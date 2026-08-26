@@ -42,11 +42,19 @@ function isHanging(board: Chess, square: Square, pieceColor: Color): boolean {
 /** Exported for reuse beyond blunder-tagging: the vision-drill trainer
  * ("is anything hanging?") and the optional live hang-warning during bot
  * games both want the same "is this side about to lose material for
- * free" check, not a reimplementation of it. */
-export function hasHangingPiece(board: Chess, color: Color): boolean {
+ * free" check, not a reimplementation of it.
+ *
+ * `minValue` is the hang-detection sensitivity tier those two features
+ * share (see main.ts's hang-sensitivity select) -- default `1` matches
+ * the original behavior exactly (any hanging piece, pawns included), a
+ * beginner tier can raise this to only flag the pieces a newer player
+ * would actually notice losing (queen/rook, minValue 5) without pretending
+ * pawns don't hang at all -- this changes what counts as worth a warning,
+ * not the underlying detection logic. */
+export function hasHangingPiece(board: Chess, color: Color, minValue: number = 1): boolean {
   for (const row of board.board()) {
     for (const cell of row) {
-      if (cell && cell.color === color && isHanging(board, cell.square, color)) return true;
+      if (cell && cell.color === color && PIECE_VALUES[cell.type] >= minValue && isHanging(board, cell.square, color)) return true;
     }
   }
   return false;

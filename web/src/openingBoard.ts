@@ -15,7 +15,7 @@
 // the ones drawn on the board.
 
 import type { MoveFrequency } from "./openingExplorer";
-import { CLASSIFICATION_ORDER, CLASS_COLOR } from "./classificationColors";
+import { CLASSIFICATION_ORDER, getClassColor } from "./classificationColors";
 
 const SQUARE = 60;
 const MARGIN = 28;
@@ -104,7 +104,7 @@ export function renderOpeningBoard(
       const frac = mv.count / maxCount;
       const { x, y } = squareCenter(mv.to);
       const r = 10 + 14 * frac;
-      const color = CLASS_COLOR[mv.classification] ?? "#8a93a6";
+      const color = getClassColor(mv.classification) ?? "#8a93a6";
       return `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}" opacity="${(0.12 + 0.28 * frac).toFixed(2)}"/>`;
     })
     .join("");
@@ -115,7 +115,7 @@ export function renderOpeningBoard(
       const from = squareCenter(mv.from);
       const to = squareCenter(mv.to);
       const width = widthFor(frac);
-      const color = CLASS_COLOR[mv.classification] ?? "#8a93a6";
+      const color = getClassColor(mv.classification) ?? "#8a93a6";
       const pct = totalGames ? ((mv.count / totalGames) * 100).toFixed(1) : "0.0";
       return (
         `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ` +
@@ -131,7 +131,7 @@ export function renderOpeningBoard(
     .map((mv) => {
       const frac = mv.count / maxCount;
       const to = squareCenter(mv.to);
-      const color = CLASS_COLOR[mv.classification] ?? "#8a93a6";
+      const color = getClassColor(mv.classification) ?? "#8a93a6";
       const pct = totalGames ? ((mv.count / totalGames) * 100).toFixed(1) : "0.0";
       return (
         `<circle cx="${to.x}" cy="${to.y}" r="5" fill="${color}" opacity="${opacityFor(frac).toFixed(2)}" stroke="#0a0c10" stroke-width="1.5">` +
@@ -142,7 +142,7 @@ export function renderOpeningBoard(
     .join("");
 
   const qualityLegend = CLASSIFICATION_ORDER.map(
-    (label) => `<span class="opening-legend-swatch" style="background:${CLASS_COLOR[label]}"></span>${esc(label)}`,
+    (label) => `<span class="opening-legend-swatch" style="background:${getClassColor(label)}"></span>${esc(label)}`,
   ).join(" ");
 
   const rows = allMoves

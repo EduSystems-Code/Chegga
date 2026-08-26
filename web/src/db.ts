@@ -159,6 +159,16 @@ export function putSyncState(db: IDBDatabase, state: SyncStateRecord): Promise<v
   });
 }
 
+/** How many months already have a sync record for this visitor -- used
+ * purely for the "resuming, N months already synced" message shown
+ * before a sync run starts, not for any resume logic itself (that
+ * already lives in syncGames, keyed the same way). */
+export function countSyncStatesForUsername(db: IDBDatabase, username: string): Promise<number> {
+  const tx = db.transaction("syncState", "readonly");
+  const index = tx.objectStore("syncState").index("byUsername");
+  return req(index.getAll(IDBKeyRange.only(username))).then((rows) => rows.length);
+}
+
 export function gameExists(db: IDBDatabase, chessComUuid: string): Promise<boolean> {
   const tx = db.transaction("games", "readonly");
   return req(tx.objectStore("games").getKey(chessComUuid)).then((key) => key !== undefined);

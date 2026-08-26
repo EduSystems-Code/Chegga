@@ -9,7 +9,7 @@
 
 import type { ProfileSummary } from "./profileService";
 import type { StrengthEstimate } from "./strengthEstimate";
-import { CLASSIFICATION_ORDER, CLASS_COLOR } from "./classificationColors";
+import { CLASSIFICATION_ORDER, getClassColor } from "./classificationColors";
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -26,7 +26,7 @@ export function renderProfile(
   const classificationBar = CLASSIFICATION_ORDER.filter((label) => profile.classificationCounts[label] > 0)
     .map((label) => {
       const pct = (profile.classificationRate[label] ?? 0) * 100;
-      return `<div class="classification-segment" style="width:${pct}%;background:${CLASS_COLOR[label]}" title="${label}: ${profile.classificationCounts[label]} moves (${pct.toFixed(1)}%)">${pct >= 6 ? label : ""}</div>`;
+      return `<div class="classification-segment" style="width:${pct}%;background:${getClassColor(label)}" title="${label}: ${profile.classificationCounts[label]} moves (${pct.toFixed(1)}%)">${pct >= 6 ? label : ""}</div>`;
     })
     .join("");
 

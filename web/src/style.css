@@ -1177,3 +1177,24 @@ input[type="range"] {
 .rival-insights p {
   margin: 0;
 }
+
+/* --- Progress bar (progressBar.ts), shared by Sync and Analyze --- */
+.progress-wrap {
+  margin-top: 10px;
+}
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.progress-label {
+  margin-top: 6px;
+}

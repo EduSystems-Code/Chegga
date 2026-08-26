@@ -30,7 +30,8 @@ export function renderRivalTracking(records: RivalRecord[], insights: RivalInsig
           <td>${r.games}</td>
           <td>${r.wins}-${r.losses}-${r.draws}</td>
           <td>${Math.round(r.winRate * 100)}%</td>
-          <td>${r.avgOpponentRating ?? "—"}</td>
+          <td>${r.recentAvgOpponentRating ?? "—"}</td>
+          <td>${r.allTimeAvgOpponentRating ?? "—"}</td>
           <td>${formatDate(r.lastPlayed)}</td>
         </tr>
       `;
@@ -45,7 +46,7 @@ export function renderRivalTracking(records: RivalRecord[], insights: RivalInsig
   return `
     <div class="rival-insights">${insightCards}</div>
     <table>
-      <thead><tr><th>Opponent</th><th>Games</th><th>W-L-D</th><th>Win rate</th><th>Avg rating</th><th>Last played</th></tr></thead>
+      <thead><tr><th>Opponent</th><th>Games</th><th>W-L-D</th><th>Win rate</th><th>Avg rating (recent)</th><th>Avg rating (all-time)</th><th>Last played</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;

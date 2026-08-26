@@ -27,6 +27,7 @@ import {
   importAllData,
   putSkillSnapshot,
   getSkillSnapshots,
+  countSyncStatesForUsername,
 } from "./db";
 import type { GameRecord, ExportedData } from "./db";
 import { Engine } from "./engine";
@@ -82,6 +83,8 @@ import {
 import { analyzeFinishedBotGame, renderPostGameReport, buildAnnotatedPgn, downloadTextFile } from "./postGameReport";
 import { playMoveSound, playCaptureSound, playCheckSound, playGameEndSound, isSoundEnabled, setSoundEnabled } from "./soundEffects";
 import { saveBotGame, loadSavedBotGame, clearSavedBotGame } from "./botGameStorage";
+import { createProgressBar } from "./progressBar";
+import { isColorblindPalette, setColorblindPalette } from "./classificationColors";
 
 // Cap arrows per origin square so the board stays legible as the synced
 // history grows -- see openingExplorer.ts's topMovesPerOrigin.
@@ -95,12 +98,22 @@ app.innerHTML = `
     </div>
     <p class="tagline">Your Chess.com games, analyzed in your browser — nothing leaves your device.</p>
 
+    <section class="card">
+      <h2>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
+        a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
+      </p>
+      <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
+    </section>
+
     <section class="card" id="focus-section" style="display:none">
       <h2>Your focus</h2>
       <p class="tagline" style="margin-bottom:16px">
         A rule-based read on exactly where your play is weakest right now, one specific thing to practice for it, and
         whether that number is actually moving — not an AI opinion, just your own numbers measured the same way each
-        time.
+        time. (The PK taxonomy above is the direction this is heading — it doesn't have puzzle content behind it yet,
+        so this stays the working diagnostic in the meantime.)
       </p>
       <div id="focus-output"></div>
     </section>
@@ -111,15 +124,6 @@ app.innerHTML = `
         ${renderCheatSheet()}
       </section>
     </details>
-
-    <section class="card">
-      <h2>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
-        a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
-      </p>
-      <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
-    </section>
 
     <section class="card">
       <h2>Play vs. bot</h2>
@@ -145,6 +149,12 @@ app.innerHTML = `
           ${ODDS_OPTIONS.map((o) => `<option value="${o.value}">${o.label}</option>`).join("")}
         </select>
         <label class="play-checkbox-label"><input type="checkbox" id="bot-hang-warning" /> Warn me about hanging pieces</label>
+        <label for="hang-sensitivity">Hang-detection sensitivity</label>
+        <select id="hang-sensitivity">
+          <option value="5">Beginner (queen/rook only)</option>
+          <option value="3">Intermediate (+ bishop/knight)</option>
+          <option value="1" selected>Advanced (+ pawns)</option>
+        </select>
       </div>
       <div class="play-controls">
         <label class="play-checkbox-label"><input type="checkbox" id="bot-show-analysis" /> Show live analysis (eval bar + best move)</label>
@@ -156,6 +166,7 @@ app.innerHTML = `
         <select id="board-theme">
           ${BOARD_THEMES.map((t) => `<option value="${t.id}">${t.label}</option>`).join("")}
         </select>
+        <label class="play-checkbox-label"><input type="checkbox" id="colorblind-palette" /> Colorblind-safe move colors</label>
       </div>
       <div id="resume-banner" class="status-line status-ok" style="display:none">
         You have a game in progress.
@@ -248,6 +259,8 @@ app.innerHTML = `
         <button type="submit" id="sync-btn">Sync games</button>
       </form>
       <p id="sync-log" class="status-line">enter a username and click Sync.</p>
+      <div id="sync-progress"></div>
+      <p class="status-line">This keeps running while you look at other sections — no need to wait here.</p>
     </section>
 
     <details class="collapsible">
@@ -274,6 +287,7 @@ app.innerHTML = `
         <button type="submit" id="analyze-recent-btn">Analyze most recent</button>
       </form>
       <p id="analyze-recent-log" class="status-line">games are analyzed newest-first, right here in your browser.</p>
+      <div id="analyze-progress"></div>
     </section>
 
     <section class="card" id="profile-section" style="display:none">
@@ -405,6 +419,47 @@ botSoundCheckbox.addEventListener("change", () => setSoundEnabled(botSoundCheckb
 
 boardThemeSelect.value = loadSavedBoardTheme();
 boardThemeSelect.addEventListener("change", () => applyBoardTheme(boardThemeSelect.value));
+
+// --- Hang-detection sensitivity (shared by the live bot-game warning and
+// the standalone Vision Trainer -- one setting, not two, since both call
+// the same hasHangingPiece check) ---
+
+const HANG_SENSITIVITY_KEY = "chegga-web:hang-sensitivity";
+const hangSensitivitySelect = document.querySelector<HTMLSelectElement>("#hang-sensitivity")!;
+
+function loadHangSensitivity(): number {
+  try {
+    const saved = localStorage.getItem(HANG_SENSITIVITY_KEY);
+    if (saved) return parseInt(saved, 10);
+  } catch {
+    // ignore -- storage may be blocked
+  }
+  return 1; // Advanced -- matches the original, pre-setting behavior
+}
+
+function currentHangMinValue(): number {
+  return parseInt(hangSensitivitySelect.value, 10) || 1;
+}
+
+hangSensitivitySelect.value = String(loadHangSensitivity());
+hangSensitivitySelect.addEventListener("change", () => {
+  try {
+    localStorage.setItem(HANG_SENSITIVITY_KEY, hangSensitivitySelect.value);
+  } catch {
+    // best-effort only
+  }
+});
+
+// --- Colorblind-safe move-quality palette ---
+
+const colorblindCheckbox = document.querySelector<HTMLInputElement>("#colorblind-palette")!;
+colorblindCheckbox.checked = isColorblindPalette();
+colorblindCheckbox.addEventListener("change", () => {
+  setColorblindPalette(colorblindCheckbox.checked);
+  // Re-renders the profile bar and opening/depth boards, the only real
+  // consumers of the move-quality palette -- no-op if nothing's synced yet.
+  void refreshProfile();
+});
 
 function renderMoveList() {
   let html = "";
@@ -581,7 +636,7 @@ function checkHangWarning(board: PlayBoard) {
   const chess = new Chess(board.getFen());
   // Checked right after the human's own move commits: is the mover's own
   // color (them) now leaving something hanging for the opponent to grab?
-  if (hasHangingPiece(chess, humanColor === "white" ? "w" : "b")) {
+  if (hasHangingPiece(chess, humanColor === "white" ? "w" : "b", currentHangMinValue())) {
     playHangWarning.textContent = "⚠️ Heads up — that move may have left something hanging.";
     playHangWarning.style.display = "";
   }
@@ -728,17 +783,28 @@ let currentUsername: string | null = null;
 // storage conventions) — not a real login, just a local shortcut.
 const LAST_USERNAME_KEY = "chegga-web:last-username";
 
+const syncProgressBar = createProgressBar(document.querySelector<HTMLElement>("#sync-progress")!);
+
 async function runSync(username: string) {
   syncBtn.disabled = true;
-  setStatus(syncLog, `syncing ${username}…`);
 
   try {
     const db = await openDb();
+
+    // Real "resuming" signal, not guessed -- an actual count of months
+    // this visitor already has synced, so a re-sync (or a first visit that
+    // picks up a remembered username) says something true instead of a
+    // generic "syncing…" that looks identical whether this is the first
+    // sync ever or the hundredth.
+    const alreadySynced = await countSyncStatesForUsername(db, username);
+    setStatus(syncLog, alreadySynced > 0 ? `You have ${alreadySynced} months already synced — checking for updates…` : `syncing ${username} for the first time…`);
+
     const client = new ChessComClient(`chegga-web visitor sync for ${username}`);
     const result = await syncGames(db, client, username, (progress) => {
-      setStatus(syncLog, `syncing… month ${progress.currentMonth}: ${progress.monthsProcessed} months, ${progress.gamesAdded} games added so far`);
+      syncProgressBar.update(progress.monthsProcessed, progress.totalMonths, `Checking ${progress.currentMonth ?? "…"} — ${progress.gamesAdded} new games so far`);
     });
     db.close();
+    syncProgressBar.hide();
 
     currentUsername = username;
     try {
@@ -753,6 +819,7 @@ async function runSync(username: string) {
     );
     await refreshProfile();
   } catch (err: any) {
+    syncProgressBar.hide();
     // syncGames marks each month "complete" as it finishes (see
     // syncService.ts), so a failure partway through doesn't lose earlier
     // months -- the next Sync click resumes from wherever it stopped
@@ -852,6 +919,7 @@ const analyzeRecentForm = document.querySelector<HTMLFormElement>("#analyze-rece
 const analyzeCountInput = document.querySelector<HTMLInputElement>("#analyze-count")!;
 const analyzeRecentBtn = document.querySelector<HTMLButtonElement>("#analyze-recent-btn")!;
 const analyzeRecentLog = document.querySelector<HTMLParagraphElement>("#analyze-recent-log")!;
+const analyzeProgressBar = createProgressBar(document.querySelector<HTMLElement>("#analyze-progress")!);
 
 analyzeRecentForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -894,7 +962,8 @@ analyzeRecentForm.addEventListener("submit", async (e) => {
     const failures: string[] = [];
     for (let i = 0; i < candidates.length; i++) {
       const game = candidates[i];
-      setStatus(analyzeRecentLog, `analyzing game ${i + 1}/${candidates.length} (${game.endTime ? new Date(game.endTime * 1000).toISOString().slice(0, 10) : game.chessComUuid})…`);
+      const dateLabel = game.endTime ? new Date(game.endTime * 1000).toISOString().slice(0, 10) : game.chessComUuid;
+      analyzeProgressBar.update(i + 1, candidates.length, `Analyzing ${dateLabel}`);
       try {
         const moves = await analyzeGame(engine, game, DEFAULT_ANALYSIS_OPTIONS);
         await putMoveAnalyses(db, moves);
@@ -906,6 +975,7 @@ analyzeRecentForm.addEventListener("submit", async (e) => {
         failures.push(game.chessComUuid);
         consecutiveFailures += 1;
         if (consecutiveFailures >= 3) {
+          analyzeProgressBar.hide();
           setStatus(analyzeRecentLog, `Stopped after 3 games in a row failed (engine may have crashed) — see console. ${analyzed} analyzed before that.`, "error");
           await refreshProfile();
           return;
@@ -913,6 +983,7 @@ analyzeRecentForm.addEventListener("submit", async (e) => {
       }
     }
 
+    analyzeProgressBar.hide();
     setStatus(
       analyzeRecentLog,
       failures.length
@@ -922,6 +993,7 @@ analyzeRecentForm.addEventListener("submit", async (e) => {
     );
     await refreshProfile();
   } catch (err: any) {
+    analyzeProgressBar.hide();
     setStatus(analyzeRecentLog, `Analysis failed: ${err.message ?? err}`, "error");
   } finally {
     engine.terminate();
@@ -1385,7 +1457,7 @@ function answerVision(guessHanging: boolean) {
   if (!visionCurrentFen || visionAnswered) return;
   visionAnswered = true;
   const chess = new Chess(visionCurrentFen);
-  const actuallyHanging = hasHangingPiece(chess, chess.turn());
+  const actuallyHanging = hasHangingPiece(chess, chess.turn(), currentHangMinValue());
   const correct = guessHanging === actuallyHanging;
   setStatus(
     visionStatus,

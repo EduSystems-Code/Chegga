@@ -12,6 +12,7 @@ import { normalizeGame, UntrackedUserError } from "./gameNormalizer";
 
 export interface SyncProgress {
   monthsProcessed: number;
+  totalMonths: number;
   gamesAdded: number;
   currentMonth?: string;
 }
@@ -42,6 +43,7 @@ export async function syncGames(
 ): Promise<SyncResult> {
   const archiveUrls = await client.getArchiveUrls(username);
   const currentMonth = currentYearMonth();
+  const totalMonths = archiveUrls.length;
 
   let monthsProcessed = 0;
   let gamesAdded = 0;
@@ -51,6 +53,13 @@ export async function syncGames(
 
     const state = await getSyncState(db, username, yearMonth);
     if (state && state.status === "complete" && yearMonth !== currentMonth) {
+      // Still reported to onProgress -- a skipped (already-synced) month is
+      // real progress through the account's history, just not a fetch. Not
+      // reporting these made the progress bar (added same session as this
+      // comment) look frozen for a re-sync where most months are already
+      // done, then jump to "done" all at once.
+      monthsProcessed += 1;
+      onProgress?.({ monthsProcessed, totalMonths, gamesAdded, currentMonth: yearMonth });
       continue;
     }
 
@@ -102,7 +111,7 @@ export async function syncGames(
 
     monthsProcessed += 1;
     gamesAdded += addedThisMonth;
-    onProgress?.({ monthsProcessed, gamesAdded, currentMonth: yearMonth });
+    onProgress?.({ monthsProcessed, totalMonths, gamesAdded, currentMonth: yearMonth });
   }
 
   return { monthsProcessed, gamesAdded };

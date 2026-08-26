@@ -17,6 +17,8 @@ import type { GameRecord } from "./db";
 
 const MIN_RIVAL_GAMES = 2; // matches matchup_service.py's own threshold
 
+const RECENT_GAMES_WINDOW = 5;
+
 export interface RivalRecord {
   opponent: string;
   games: number;
@@ -25,7 +27,8 @@ export interface RivalRecord {
   draws: number;
   winRate: number;
   lastPlayed: number; // endTime unix ms, most recent game
-  avgOpponentRating?: number; // undefined if no rated games against them
+  allTimeAvgOpponentRating?: number; // undefined if no rated games against them
+  recentAvgOpponentRating?: number; // avg over the most recent RECENT_GAMES_WINDOW rated games only -- an old game before a rival's rating moved shouldn't carry the same weight as a fresh one
 }
 
 function opponentOf(game: GameRecord): string {
@@ -49,6 +52,8 @@ export function computeRivalRecords(games: GameRecord[], limit = 20): RivalRecor
     byOpponent.set(opp, list);
   }
 
+  const avg = (nums: number[]): number | undefined => (nums.length ? Math.round(nums.reduce((s, r) => s + r, 0) / nums.length) : undefined);
+
   const records: RivalRecord[] = [];
   for (const [opponent, oppGames] of byOpponent) {
     if (oppGames.length < MIN_RIVAL_GAMES) continue;
@@ -56,14 +61,21 @@ export function computeRivalRecords(games: GameRecord[], limit = 20): RivalRecor
       losses = 0,
       draws = 0,
       lastPlayed = 0;
-    const ratedRatings: number[] = [];
     for (const g of oppGames) {
       if (g.userResult === "win") wins++;
       else if (g.userResult === "loss") losses++;
       else draws++;
       if (g.endTime > lastPlayed) lastPlayed = g.endTime;
-      if (g.rated && opponentRatingOf(g)) ratedRatings.push(opponentRatingOf(g));
     }
+
+    // Rated ratings only, newest-first, so "recent" means the last N rated
+    // games specifically -- an unrated friendly sitting between two rated
+    // games shouldn't shift which games count as "recent."
+    const ratedByRecency = oppGames
+      .filter((g) => g.rated && opponentRatingOf(g))
+      .sort((a, b) => b.endTime - a.endTime);
+    const ratedRatings = ratedByRecency.map(opponentRatingOf);
+
     records.push({
       opponent,
       games: oppGames.length,
@@ -72,7 +84,8 @@ export function computeRivalRecords(games: GameRecord[], limit = 20): RivalRecor
       draws,
       winRate: Math.round((wins / oppGames.length) * 1000) / 1000,
       lastPlayed,
-      avgOpponentRating: ratedRatings.length ? Math.round(ratedRatings.reduce((s, r) => s + r, 0) / ratedRatings.length) : undefined,
+      allTimeAvgOpponentRating: avg(ratedRatings),
+      recentAvgOpponentRating: avg(ratedRatings.slice(0, RECENT_GAMES_WINDOW)),
     });
   }
 
