@@ -67,6 +67,8 @@ import {
   computeFirstMistakePly,
 } from "./gamePatterns";
 import { renderGamePatterns } from "./gamePatternsView";
+import { computeRivalRecords, computeRivalInsights } from "./rivalTracking";
+import { renderRivalTracking } from "./rivalTrackingView";
 import { setupCollapsibleCards, expandCard } from "./collapsibleCards";
 import { BOARD_THEMES, applyBoardTheme, loadSavedBoardTheme } from "./boardTheme";
 import {
@@ -291,6 +293,14 @@ app.innerHTML = `
         time, and how you do against different opponent strengths.
       </p>
       <div id="patterns-output"></div>
+    </section>
+
+    <section class="card" id="rivals-section" style="display:none">
+      <h2>Rivals</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Opponents you've faced more than once — your real record against each one, not just a lifetime win rate.
+      </p>
+      <div id="rivals-output"></div>
     </section>
 
     <section class="card" id="opening-section" style="display:none">
@@ -1132,6 +1142,13 @@ async function refreshProfile() {
   patternsSection.style.display = patternsHtml ? "" : "none";
   patternsOutput.innerHTML = patternsHtml;
 
+  // Rivals, like game patterns, only need synced games -- no engine
+  // analysis required, so this shows up right after sync too.
+  const rivalRecords = computeRivalRecords(allGames);
+  const rivalInsights = computeRivalInsights(rivalRecords);
+  rivalsSection.style.display = allGames.length ? "" : "none";
+  rivalsOutput.innerHTML = renderRivalTracking(rivalRecords, rivalInsights);
+
   if (profile.gamesAnalyzed === 0) {
     profileSection.style.display = "none";
     insightsSection.style.display = "none";
@@ -1196,6 +1213,8 @@ const insightsSection = document.querySelector<HTMLElement>("#insights-section")
 const insightsOutput = document.querySelector<HTMLDivElement>("#insights-output")!;
 const patternsSection = document.querySelector<HTMLElement>("#patterns-section")!;
 const patternsOutput = document.querySelector<HTMLDivElement>("#patterns-output")!;
+const rivalsSection = document.querySelector<HTMLElement>("#rivals-section")!;
+const rivalsOutput = document.querySelector<HTMLDivElement>("#rivals-output")!;
 
 function renderInsights(
   profile: Awaited<ReturnType<typeof computeProfileForUsername>>["profile"],

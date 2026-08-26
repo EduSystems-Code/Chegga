@@ -1166,3 +1166,14 @@ input[type="range"] {
 @media (prefers-reduced-motion: reduce) {
   .pk-flash { animation: none; }
 }
+
+/* --- Rivals (rivalTrackingView.ts) --- */
+.rival-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.rival-insights p {
+  margin: 0;
+}
