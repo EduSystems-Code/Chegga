@@ -32,7 +32,7 @@ import {
 import type { GameRecord, ExportedData } from "./db";
 import { Engine } from "./engine";
 import { ChessComClient } from "./chessComClient";
-import { syncGames } from "./syncService";
+import { syncGames, quickSyncRecentGames } from "./syncService";
 import { analyzeGame, DEFAULT_ANALYSIS_OPTIONS } from "./engineAnalysis";
 import { computeProfile } from "./profileService";
 import { estimateStrength } from "./strengthEstimate";
@@ -90,6 +90,16 @@ import { isColorblindPalette, setColorblindPalette } from "./classificationColor
 // history grows -- see openingExplorer.ts's topMovesPerOrigin.
 const MOVES_PER_ORIGIN_SQUARE = 3;
 
+// A brand-new visitor's first sync pulls only this many recent games
+// (newest-first) instead of an entire account's history -- the direct
+// fix for "the player might click off before seeing what this does."
+// A returning visitor (anything already synced) always gets the regular
+// full incremental sync instead, same as before this existed.
+const QUICK_SYNC_GAME_TARGET = 30;
+// And the first-look analysis that auto-runs right after that quick
+// sync, so there's something to actually look at without a second click.
+const QUICK_SYNC_ANALYZE_COUNT = 10;
+
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="wrap">
@@ -98,13 +108,69 @@ app.innerHTML = `
     </div>
     <p class="tagline">Your Chess.com games, analyzed in your browser — nothing leaves your device.</p>
 
-    <section class="card">
-      <h2>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</h2>
+    <section class="card" id="sync-section">
+      <h2>1. Connect your Chess.com username</h2>
       <p class="tagline" style="margin-bottom:16px">
-        74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
-        a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
+        Chess.com already shows you one game at a time. This looks across every game you've ever played to find the
+        patterns a single review can't: which openings actually win for you, what kind of blunder you make most, and
+        whether time pressure or a specific game phase is where you lose the most ground. Nothing is uploaded
+        anywhere — the sync and the analysis both run right here in this browser tab.
       </p>
-      <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
+      <p class="tagline" style="margin-bottom:16px">
+        First sync pulls your most recent games only, so you see what this does in seconds instead of waiting on
+        your whole history — grab everything else with one click once you've had a look.
+      </p>
+      <form id="sync-form" class="row">
+        <input id="username" type="text" placeholder="e.g. MichaelBottega" autocomplete="off" required />
+        <button type="submit" id="sync-btn">Sync games</button>
+      </form>
+      <p id="sync-log" class="status-line">enter a username and click Sync.</p>
+      <div id="sync-progress"></div>
+      <p class="status-line">This keeps running while you look at other sections — no need to wait here.</p>
+      <p id="full-sync-prompt" class="status-line status-ok" style="display:none">
+        <span id="full-sync-prompt-text"></span> <button type="button" id="full-sync-btn">Get my full history</button>
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>2. Analyze your games</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        A quick first batch analyzes automatically right after your first sync — use this to analyze more, any
+        time.
+      </p>
+      <form id="analyze-recent-form" class="row">
+        <input id="analyze-count" type="number" min="1" max="200" value="10" />
+        <button type="submit" id="analyze-recent-btn">Analyze most recent</button>
+      </form>
+      <p id="analyze-recent-log" class="status-line">games are analyzed newest-first, right here in your browser.</p>
+      <div id="analyze-progress"></div>
+    </section>
+
+    <section class="card" id="profile-section" style="display:none">
+      <h2>Your profile</h2>
+      <div id="profile-output"></div>
+    </section>
+
+    <section class="card" id="insights-section" style="display:none">
+      <h2>Insights</h2>
+      <div id="insights-output" class="insights-list"></div>
+    </section>
+
+    <section class="card" id="patterns-section" style="display:none">
+      <h2>Game patterns</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        From every synced game, not just the ones analyzed by the engine — how your games end, your rating over
+        time, and how you do against different opponent strengths.
+      </p>
+      <div id="patterns-output"></div>
+    </section>
+
+    <section class="card" id="rivals-section" style="display:none">
+      <h2>Rivals</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Opponents you've faced more than once — your real record against each one, not just a lifetime win rate.
+      </p>
+      <div id="rivals-output"></div>
     </section>
 
     <section class="card" id="focus-section" style="display:none">
@@ -112,8 +178,7 @@ app.innerHTML = `
       <p class="tagline" style="margin-bottom:16px">
         A rule-based read on exactly where your play is weakest right now, one specific thing to practice for it, and
         whether that number is actually moving — not an AI opinion, just your own numbers measured the same way each
-        time. (The PK taxonomy above is the direction this is heading — it doesn't have puzzle content behind it yet,
-        so this stays the working diagnostic in the meantime.)
+        time.
       </p>
       <div id="focus-output"></div>
     </section>
@@ -246,23 +311,6 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="card">
-      <h2>1. Connect your Chess.com username</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Chess.com already shows you one game at a time. This looks across every game you've ever played to find the
-        patterns a single review can't: which openings actually win for you, what kind of blunder you make most, and
-        whether time pressure or a specific game phase is where you lose the most ground. Nothing is uploaded
-        anywhere — the sync and the analysis both run right here in this browser tab.
-      </p>
-      <form id="sync-form" class="row">
-        <input id="username" type="text" placeholder="e.g. MichaelBottega" autocomplete="off" required />
-        <button type="submit" id="sync-btn">Sync games</button>
-      </form>
-      <p id="sync-log" class="status-line">enter a username and click Sync.</p>
-      <div id="sync-progress"></div>
-      <p class="status-line">This keeps running while you look at other sections — no need to wait here.</p>
-    </section>
-
     <details class="collapsible">
       <summary>Back up or move your data (export / import)</summary>
       <section class="card">
@@ -279,43 +327,6 @@ app.innerHTML = `
         <p id="data-io-log" class="status-line"></p>
       </section>
     </details>
-
-    <section class="card">
-      <h2>2. Analyze your games</h2>
-      <form id="analyze-recent-form" class="row">
-        <input id="analyze-count" type="number" min="1" max="200" value="10" />
-        <button type="submit" id="analyze-recent-btn">Analyze most recent</button>
-      </form>
-      <p id="analyze-recent-log" class="status-line">games are analyzed newest-first, right here in your browser.</p>
-      <div id="analyze-progress"></div>
-    </section>
-
-    <section class="card" id="profile-section" style="display:none">
-      <h2>Your profile</h2>
-      <div id="profile-output"></div>
-    </section>
-
-    <section class="card" id="insights-section" style="display:none">
-      <h2>Insights</h2>
-      <div id="insights-output" class="insights-list"></div>
-    </section>
-
-    <section class="card" id="patterns-section" style="display:none">
-      <h2>Game patterns</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        From every synced game, not just the ones analyzed by the engine — how your games end, your rating over
-        time, and how you do against different opponent strengths.
-      </p>
-      <div id="patterns-output"></div>
-    </section>
-
-    <section class="card" id="rivals-section" style="display:none">
-      <h2>Rivals</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Opponents you've faced more than once — your real record against each one, not just a lifetime win rate.
-      </p>
-      <div id="rivals-output"></div>
-    </section>
 
     <section class="card" id="opening-section" style="display:none">
       <h2>Move explorer</h2>
@@ -346,6 +357,15 @@ app.innerHTML = `
         <button type="button" id="depth-next" aria-label="Next move number">▶</button>
       </div>
       <div id="depth-output"></div>
+    </section>
+
+    <section class="card">
+      <h2>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
+        a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
+      </p>
+      <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
     </section>
 
     <details class="collapsible">
@@ -784,27 +804,37 @@ let currentUsername: string | null = null;
 const LAST_USERNAME_KEY = "chegga-web:last-username";
 
 const syncProgressBar = createProgressBar(document.querySelector<HTMLElement>("#sync-progress")!);
+const fullSyncPrompt = document.querySelector<HTMLParagraphElement>("#full-sync-prompt")!;
+const fullSyncPromptText = document.querySelector<HTMLSpanElement>("#full-sync-prompt-text")!;
+const fullSyncBtn = document.querySelector<HTMLButtonElement>("#full-sync-btn")!;
 
+/** `quick: true` is the fast onboarding path (this visitor's very first
+ * sync ever, judged by having zero prior syncState rows) -- newest
+ * games only, target set by QUICK_SYNC_GAME_TARGET, so there's something
+ * to look at in seconds instead of however long a full account takes.
+ * Every other call (a returning visitor, or explicitly clicking "Get my
+ * full history") gets the real full sync, unchanged from before this
+ * existed. */
 async function runSync(username: string) {
   syncBtn.disabled = true;
+  fullSyncPrompt.style.display = "none";
 
   try {
     const db = await openDb();
 
-    // Real "resuming" signal, not guessed -- an actual count of months
-    // this visitor already has synced, so a re-sync (or a first visit that
-    // picks up a remembered username) says something true instead of a
-    // generic "syncing…" that looks identical whether this is the first
-    // sync ever or the hundredth.
+    // Real "resuming"/"first ever" signal, not guessed -- an actual count
+    // of months this visitor already has synced, so the message (and
+    // which sync path runs) says something true instead of a generic
+    // "syncing…" that looks identical whether this is the first sync ever
+    // or the hundredth.
     const alreadySynced = await countSyncStatesForUsername(db, username);
-    setStatus(syncLog, alreadySynced > 0 ? `You have ${alreadySynced} months already synced — checking for updates…` : `syncing ${username} for the first time…`);
+    const isFirstEverSync = alreadySynced === 0;
+    setStatus(syncLog, isFirstEverSync ? `syncing ${username} for the first time…` : `You have ${alreadySynced} months already synced — checking for updates…`);
 
     const client = new ChessComClient(`chegga-web visitor sync for ${username}`);
-    const result = await syncGames(db, client, username, (progress) => {
+    const onProgress = (progress: { monthsProcessed: number; totalMonths: number; gamesAdded: number; currentMonth?: string }) => {
       syncProgressBar.update(progress.monthsProcessed, progress.totalMonths, `Checking ${progress.currentMonth ?? "…"} — ${progress.gamesAdded} new games so far`);
-    });
-    db.close();
-    syncProgressBar.hide();
+    };
 
     currentUsername = username;
     try {
@@ -812,15 +842,39 @@ async function runSync(username: string) {
     } catch {
       // best-effort only -- private browsing / blocked storage just means no auto-fill next time
     }
-    setStatus(
-      syncLog,
-      `${result.monthsProcessed} months checked, ${result.gamesAdded} new games synced for ${username}. Ready to analyze.`,
-      "ok",
-    );
-    await refreshProfile();
+
+    if (isFirstEverSync) {
+      const result = await quickSyncRecentGames(db, client, username, QUICK_SYNC_GAME_TARGET, onProgress);
+      db.close();
+      syncProgressBar.hide();
+      setStatus(syncLog, `Synced your ${result.gamesAdded} most recent games. Analyzing a first batch…`, "ok");
+      if (!result.fullyCaughtUp) {
+        // The real count, not the QUICK_SYNC_GAME_TARGET constant -- a
+        // month with more games than the target (a very active recent
+        // month) means the actual number synced can run well past the
+        // target, so the copy says what really happened, not the goal.
+        fullSyncPromptText.textContent = `That's your ${result.gamesAdded} most recent games.`;
+        fullSyncPrompt.style.display = "";
+      }
+      await refreshProfile();
+      // The actual "don't make them click twice to see anything" fix --
+      // runs the same analysis path Analyze-recent's button does, just
+      // triggered automatically instead of waiting for a second click.
+      await runAnalyzeRecent(QUICK_SYNC_ANALYZE_COUNT);
+    } else {
+      const result = await syncGames(db, client, username, onProgress);
+      db.close();
+      syncProgressBar.hide();
+      setStatus(
+        syncLog,
+        `${result.monthsProcessed} months checked, ${result.gamesAdded} new games synced for ${username}. Ready to analyze.`,
+        "ok",
+      );
+      await refreshProfile();
+    }
   } catch (err: any) {
     syncProgressBar.hide();
-    // syncGames marks each month "complete" as it finishes (see
+    // Both sync paths mark each month "complete" as they finish (see
     // syncService.ts), so a failure partway through doesn't lose earlier
     // months -- the next Sync click resumes from wherever it stopped
     // instead of starting over. Said explicitly here so a mid-sync failure
@@ -837,6 +891,34 @@ syncForm.addEventListener("submit", async (e) => {
   const username = usernameInput.value.trim();
   if (!username) return;
   await runSync(username);
+});
+
+// "Get my full history" -- the explicit second pass. By the time this is
+// visible, this visitor's newest months are already marked complete (the
+// quick sync did that), so a plain full syncGames() call here correctly
+// picks up only what's left, oldest-first, no special-casing needed.
+fullSyncBtn.addEventListener("click", async () => {
+  if (!currentUsername) return;
+  fullSyncBtn.disabled = true;
+  fullSyncPrompt.style.display = "none";
+  setStatus(syncLog, `Getting your full history for ${currentUsername}…`);
+  try {
+    const db = await openDb();
+    const client = new ChessComClient(`chegga-web visitor sync for ${currentUsername}`);
+    const result = await syncGames(db, client, currentUsername, (progress) => {
+      syncProgressBar.update(progress.monthsProcessed, progress.totalMonths, `Checking ${progress.currentMonth ?? "…"} — ${progress.gamesAdded} new games so far`);
+    });
+    db.close();
+    syncProgressBar.hide();
+    setStatus(syncLog, `${result.monthsProcessed} months checked, ${result.gamesAdded} new games synced. Full history is up to date.`, "ok");
+    await refreshProfile();
+  } catch (err: any) {
+    syncProgressBar.hide();
+    setStatus(syncLog, `Full sync stopped partway: ${err.message ?? err}. What's already synced is saved — click "Get my full history" again to resume.`, "error");
+    fullSyncPrompt.style.display = "";
+  } finally {
+    fullSyncBtn.disabled = false;
+  }
 });
 
 // Auto-fill + auto-sync on load if a username was remembered -- this is
@@ -921,13 +1003,14 @@ const analyzeRecentBtn = document.querySelector<HTMLButtonElement>("#analyze-rec
 const analyzeRecentLog = document.querySelector<HTMLParagraphElement>("#analyze-recent-log")!;
 const analyzeProgressBar = createProgressBar(document.querySelector<HTMLElement>("#analyze-progress")!);
 
-analyzeRecentForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+/** Shared by the "Analyze most recent" form and the automatic first
+ * batch that runs right after a brand-new visitor's quick sync -- same
+ * logic either way, just two different triggers. */
+async function runAnalyzeRecent(count: number) {
   if (!currentUsername) {
     setStatus(analyzeRecentLog, "Sync a username first.", "error");
     return;
   }
-  const count = Math.max(1, Math.min(200, parseInt(analyzeCountInput.value, 10) || 10));
 
   analyzeRecentBtn.disabled = true;
   const db = await openDb();
@@ -1000,6 +1083,12 @@ analyzeRecentForm.addEventListener("submit", async (e) => {
     db.close();
     analyzeRecentBtn.disabled = false;
   }
+}
+
+analyzeRecentForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const count = Math.max(1, Math.min(200, parseInt(analyzeCountInput.value, 10) || 10));
+  await runAnalyzeRecent(count);
 });
 
 // --- Phase 3 + 4: profile dashboard ---
