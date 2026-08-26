@@ -15,15 +15,25 @@
 
 const STATE_KEY_PREFIX = "chegga-web:card-collapsed:";
 
+// Every card defaults collapsed on first load -- except this one. "Your
+// focus" (the growth-path assessment) is meant to be the entry point of
+// the whole page per its own design intent, not one tool among many;
+// defaulting it collapsed like everything else buries the one thing a
+// returning visitor should see first (caught live: the "Go practice this"
+// button rendered correctly but was literally unclickable, hidden inside
+// a collapsed card, on the very first verification pass).
+const DEFAULT_EXPANDED_IDS = new Set(["focus-section"]);
+
 /** Collapsed by default until the viewer explicitly opens (and thereby
  * saves a preference for) a card -- distinct from "never set," which is
  * why this isn't just `=== "1"` defaulting false. */
 function loadCollapsed(id: string): boolean {
   try {
     const stored = localStorage.getItem(STATE_KEY_PREFIX + id);
-    return stored === null ? true : stored === "1";
+    if (stored !== null) return stored === "1";
+    return !DEFAULT_EXPANDED_IDS.has(id);
   } catch {
-    return true;
+    return !DEFAULT_EXPANDED_IDS.has(id);
   }
 }
 
@@ -33,6 +43,22 @@ function saveCollapsed(id: string, collapsed: boolean): void {
   } catch {
     // ignore -- best-effort only
   }
+}
+
+/** Forces a specific card open and persists that as its saved state --
+ * for the "Go practice this" focus prescription, which needs to actually
+ * reveal the puzzle/vision/drill card it's pointing at, not just scroll to
+ * a collapsed shell. No-op if the card isn't wrapped yet or has no id
+ * match. */
+export function expandCard(cardId: string): void {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const body = card.querySelector<HTMLElement>(".card-body");
+  const chevron = card.querySelector<HTMLElement>(".card-chevron");
+  if (!body) return;
+  body.style.display = "";
+  if (chevron) chevron.textContent = "▾";
+  saveCollapsed(cardId, false);
 }
 
 /** Idempotent: safe to call again after new `section.card` elements are

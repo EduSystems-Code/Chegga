@@ -9,7 +9,11 @@
 // No coachingReport store in v1 — coaching stays parked (see context.md).
 
 const DB_NAME = "chegga-web";
-const DB_VERSION = 1;
+// v2 adds `skillSnapshots` (the growth-path feature's progress-over-time
+// store) -- onupgradeneeded only adds what's missing, so a real v1
+// browser DB upgrades in place without losing its existing games/
+// moveAnalysis/syncState data.
+const DB_VERSION = 2;
 
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -38,6 +42,13 @@ export function openDb(): Promise<IDBDatabase> {
           keyPath: ["username", "yearMonth"],
         });
         syncState.createIndex("byUsername", "username", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("skillSnapshots")) {
+        const skillSnapshots = db.createObjectStore("skillSnapshots", {
+          keyPath: ["username", "dateStamp"], // one snapshot per calendar day per visitor
+        });
+        skillSnapshots.createIndex("byUsername", "username", { unique: false });
       }
     };
 
@@ -102,6 +113,15 @@ export interface MoveAnalysisRecord {
 
   clockSeconds?: number;
   timePressureBand?: string;
+}
+
+export interface SkillSnapshotRecord {
+  username: string;
+  dateStamp: string; // "YYYY-MM-DD", local calendar day — one per day per visitor
+  timestamp: number; // unix ms, for ordering/display
+  scores: Record<string, number>; // skillProfile.ts's SKILL_CATEGORIES ids -> 0-100
+  weakestCategory?: string;
+  gamesAnalyzed: number;
 }
 
 export interface SyncStateRecord {
@@ -218,17 +238,35 @@ export function getMoveAnalysesForGames(db: IDBDatabase, gameIds: Set<string>): 
   });
 }
 
+// --- Store helpers (skill profile / growth-path snapshots) ---
+
+export function putSkillSnapshot(db: IDBDatabase, snapshot: SkillSnapshotRecord): Promise<void> {
+  const tx = db.transaction("skillSnapshots", "readwrite");
+  tx.objectStore("skillSnapshots").put(snapshot);
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export function getSkillSnapshots(db: IDBDatabase, username: string): Promise<SkillSnapshotRecord[]> {
+  const tx = db.transaction("skillSnapshots", "readonly");
+  const index = tx.objectStore("skillSnapshots").index("byUsername");
+  return req(index.getAll(IDBKeyRange.only(username))).then((rows) => rows.sort((a, b) => a.timestamp - b.timestamp));
+}
+
 // --- Store helpers (export/import — a visitor's only copy of their data
 // lives in this one browser's IndexedDB; this is the escape hatch so
 // switching browsers/devices or clearing site data doesn't silently lose
 // hours of in-browser Stockfish analysis) ---
 
 export interface ExportedData {
-  formatVersion: 1;
+  formatVersion: 1 | 2;
   exportedAt: number; // unix ms
   games: GameRecord[];
   moveAnalysis: MoveAnalysisRecord[];
   syncState: SyncStateRecord[];
+  skillSnapshots?: SkillSnapshotRecord[]; // absent on a v1 export -- treated as empty on import
 }
 
 function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
@@ -237,32 +275,41 @@ function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
 }
 
 export async function exportAllData(db: IDBDatabase): Promise<ExportedData> {
-  const [games, moveAnalysis, syncState] = await Promise.all([
+  const [games, moveAnalysis, syncState, skillSnapshots] = await Promise.all([
     getAll<GameRecord>(db, "games"),
     getAll<MoveAnalysisRecord>(db, "moveAnalysis"),
     getAll<SyncStateRecord>(db, "syncState"),
+    getAll<SkillSnapshotRecord>(db, "skillSnapshots"),
   ]);
-  return { formatVersion: 1, exportedAt: Date.now(), games, moveAnalysis, syncState };
+  return { formatVersion: 2, exportedAt: Date.now(), games, moveAnalysis, syncState, skillSnapshots };
 }
 
 /** Upserts every record from `data` into the current DB — safe to run
  * against a DB that already has some overlapping games (same upsert-by-key
  * semantics as sync), so importing into a browser that already has partial
- * data merges rather than duplicating or erroring. */
-export async function importAllData(db: IDBDatabase, data: ExportedData): Promise<{ games: number; moveAnalysis: number; syncState: number }> {
-  if (data.formatVersion !== 1) {
+ * data merges rather than duplicating or erroring. Accepts both a v1
+ * export (no skillSnapshots field -- older backups shouldn't become
+ * unreadable just because a new store was added later) and v2. */
+export async function importAllData(
+  db: IDBDatabase,
+  data: ExportedData,
+): Promise<{ games: number; moveAnalysis: number; syncState: number; skillSnapshots: number }> {
+  if (data.formatVersion !== 1 && data.formatVersion !== 2) {
     throw new Error(`Unsupported export format version: ${(data as any).formatVersion}`);
   }
-  const tx = db.transaction(["games", "moveAnalysis", "syncState"], "readwrite");
+  const snapshots = data.skillSnapshots ?? [];
+  const tx = db.transaction(["games", "moveAnalysis", "syncState", "skillSnapshots"], "readwrite");
   const gamesStore = tx.objectStore("games");
   const moveStore = tx.objectStore("moveAnalysis");
   const syncStore = tx.objectStore("syncState");
+  const skillStore = tx.objectStore("skillSnapshots");
   for (const g of data.games) gamesStore.put(g);
   for (const m of data.moveAnalysis) moveStore.put(m);
   for (const s of data.syncState) syncStore.put(s);
+  for (const s of snapshots) skillStore.put(s);
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-  return { games: data.games.length, moveAnalysis: data.moveAnalysis.length, syncState: data.syncState.length };
+  return { games: data.games.length, moveAnalysis: data.moveAnalysis.length, syncState: data.syncState.length, skillSnapshots: snapshots.length };
 }

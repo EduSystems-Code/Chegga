@@ -907,3 +907,67 @@ input[type="range"] {
     width: 140px;
   }
 }
+
+/* ================= Skill profile / growth path ================= */
+
+.skill-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.skill-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.skill-bar-label {
+  width: 170px;
+  flex-shrink: 0;
+  font-size: 0.84rem;
+  color: var(--text);
+}
+.skill-bar-weakest .skill-bar-label {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.skill-bar-track {
+  position: relative;
+  flex: 1;
+  height: 22px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.skill-bar-fill {
+  height: 100%;
+  transition: width 0.2s;
+}
+.skill-bar-value {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text);
+}
+.skill-bar-empty {
+  padding: 0 8px;
+  line-height: 22px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.skill-focus-card {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.skill-focus-card p {
+  margin: 8px 0;
+  font-size: 0.88rem;
+  color: var(--text);
+}

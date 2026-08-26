@@ -25,6 +25,8 @@ import {
   getMoveAnalysesForGames,
   exportAllData,
   importAllData,
+  putSkillSnapshot,
+  getSkillSnapshots,
 } from "./db";
 import type { GameRecord, ExportedData } from "./db";
 import { Engine } from "./engine";
@@ -50,6 +52,8 @@ import {
   roughRatingBandContext,
 } from "./statsInsights";
 import { extractPuzzles, type Puzzle, type Difficulty } from "./puzzleTrainer";
+import { assessSkills, type PrescriptionAction } from "./skillProfile";
+import { renderSkillProfile } from "./skillProfileView";
 import { getProgress, isSolved, recordAttempt, getStreak } from "./puzzleProgress";
 import { ENDGAME_DRILLS, ODDS_OPTIONS, oddsFen } from "./practicePositions";
 import {
@@ -62,7 +66,7 @@ import {
   computeFirstMistakePly,
 } from "./gamePatterns";
 import { renderGamePatterns } from "./gamePatternsView";
-import { setupCollapsibleCards } from "./collapsibleCards";
+import { setupCollapsibleCards, expandCard } from "./collapsibleCards";
 import { BOARD_THEMES, applyBoardTheme, loadSavedBoardTheme } from "./boardTheme";
 import {
   analyzePosition,
@@ -87,6 +91,16 @@ app.innerHTML = `
       <h1><span class="text-accent">Chegga</span> Web</h1>
     </div>
     <p class="tagline">Your Chess.com games, analyzed in your browser — nothing leaves your device.</p>
+
+    <section class="card" id="focus-section" style="display:none">
+      <h2>Your focus</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        A rule-based read on exactly where your play is weakest right now, one specific thing to practice for it, and
+        whether that number is actually moving — not an AI opinion, just your own numbers measured the same way each
+        time.
+      </p>
+      <div id="focus-output"></div>
+    </section>
 
     <details class="collapsible">
       <summary>New to chess? A full rules cheat sheet — setup, how pieces move, castling, tactics, and more</summary>
@@ -183,6 +197,7 @@ app.innerHTML = `
         <button type="button" id="puzzle-next-btn">Next puzzle</button>
         <span id="puzzle-streak" class="status-line"></span>
       </div>
+      <p id="puzzle-focus-indicator" class="status-line status-ok" style="display:none"></p>
       <div class="play-layout">
         <div class="play-board-wrap" id="puzzle-board-wrap"></div>
         <div class="play-sidebar">
@@ -796,7 +811,7 @@ importDataInput.addEventListener("change", async () => {
       const result = await importAllData(db, data);
       setStatus(
         dataIoLog,
-        `Imported ${result.games} games, ${result.moveAnalysis} analyzed moves. Merged with anything already here.`,
+        `Imported ${result.games} games, ${result.moveAnalysis} analyzed moves, ${result.skillSnapshots} progress snapshots. Merged with anything already here.`,
         "ok",
       );
       await refreshProfile();
@@ -1036,6 +1051,58 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// --- Your focus (skill assessment / growth path) ---
+
+const focusSection = document.querySelector<HTMLElement>("#focus-section")!;
+const focusOutput = document.querySelector<HTMLDivElement>("#focus-output")!;
+
+// One listener on the whole output, not one per render -- focus-output's
+// innerHTML gets replaced wholesale every refreshProfile call, which would
+// silently drop a directly-attached listener each time.
+focusOutput.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("#skill-prescription-btn");
+  if (!btn) return;
+  const action = JSON.parse(btn.dataset.action ?? btn.getAttribute("data-action") ?? "{}") as PrescriptionAction;
+
+  if (action.kind === "puzzle") {
+    puzzleFocusFilter = { phase: action.phase, blunderTag: action.blunderTag };
+    updatePuzzleFocusIndicator();
+    expandCard("puzzle-section");
+    loadPuzzle();
+    puzzleSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (action.kind === "vision") {
+    expandCard("vision-section");
+    visionSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (action.kind === "drill") {
+    drillSelect.value = action.drillId;
+    drillLoadBtn.click();
+    drillSelect.closest("section.card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (action.kind === "openings") {
+    expandCard("opening-section");
+    openingSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+
+/** One snapshot per calendar day per visitor -- frequent enough to build a
+ * real trend over weeks of use, not so frequent that re-opening the app
+ * five times in one afternoon fills the store with noise (putSkillSnapshot
+ * upserts on the [username, dateStamp] key, so same-day calls just
+ * overwrite with the latest number rather than duplicating). */
+async function saveSkillSnapshot(username: string, scores: Record<string, number | undefined>, weakestCategory: string | undefined, gamesAnalyzed: number) {
+  const cleanScores: Record<string, number> = {};
+  for (const [k, v] of Object.entries(scores)) if (v !== undefined) cleanScores[k] = v;
+  if (Object.keys(cleanScores).length === 0) return; // nothing scoreable yet -- don't save an empty snapshot
+
+  const now = new Date();
+  const dateStamp = now.toISOString().slice(0, 10);
+  const db = await openDb();
+  try {
+    await putSkillSnapshot(db, { username, dateStamp, timestamp: now.getTime(), scores: cleanScores, weakestCategory, gamesAnalyzed });
+  } finally {
+    db.close();
+  }
+}
+
 async function refreshProfile() {
   if (!currentUsername) return;
   const { profile, strength, openingFrequency, depthFrequency, analyzedGames, ownMoves, allGames } =
@@ -1061,10 +1128,25 @@ async function refreshProfile() {
     depthSection.style.display = "none";
     puzzleSection.style.display = "none";
     visionSection.style.display = "none";
+    focusSection.style.display = "none";
     return;
   }
   profileSection.style.display = "";
   profileOutput.innerHTML = renderProfile(profile, strength);
+
+  const assessment = assessSkills(ownMoves);
+  const scoreMap: Record<string, number | undefined> = {};
+  for (const s of assessment.scores) scoreMap[s.category] = s.score;
+  await saveSkillSnapshot(currentUsername, scoreMap, assessment.weakest?.category, profile.gamesAnalyzed);
+  const snapshotDb = await openDb();
+  let snapshots: Awaited<ReturnType<typeof getSkillSnapshots>> = [];
+  try {
+    snapshots = await getSkillSnapshots(snapshotDb, currentUsername);
+  } finally {
+    snapshotDb.close();
+  }
+  focusSection.style.display = "";
+  focusOutput.innerHTML = renderSkillProfile(assessment, snapshots);
 
   renderInsights(profile, analyzedGames, ownMoves);
 
@@ -1140,10 +1222,38 @@ const puzzleProgressEl = document.querySelector<HTMLParagraphElement>("#puzzle-p
 const puzzleStreakEl = document.querySelector<HTMLSpanElement>("#puzzle-streak")!;
 const puzzleDifficultySelect = document.querySelector<HTMLSelectElement>("#puzzle-difficulty")!;
 const puzzleNextBtn = document.querySelector<HTMLButtonElement>("#puzzle-next-btn")!;
+const puzzleFocusIndicator = document.querySelector<HTMLParagraphElement>("#puzzle-focus-indicator")!;
 
 let currentPuzzles: Puzzle[] = [];
 let activePuzzle: Puzzle | null = null;
 let puzzleBoard: PlayBoard | null = null;
+// Set by clicking "Go practice this" on the Your Focus card -- narrows the
+// puzzle pool to the specific phase/blunder-tag the skill assessment
+// flagged as the weakest area, on top of whatever difficulty is selected.
+// Persists across "Next puzzle" clicks until explicitly cleared, so the
+// practice session actually stays on the prescribed topic instead of
+// reverting to a random puzzle on the very next click.
+let puzzleFocusFilter: { phase?: string; blunderTag?: string } | null = null;
+
+function updatePuzzleFocusIndicator() {
+  if (!puzzleFocusFilter) {
+    puzzleFocusIndicator.style.display = "none";
+    return;
+  }
+  const parts = [puzzleFocusFilter.phase, puzzleFocusFilter.blunderTag?.replace(/_/g, " ")].filter(Boolean);
+  puzzleFocusIndicator.style.display = "";
+  puzzleFocusIndicator.textContent = `Focused on: ${parts.join(", ")} — `;
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.textContent = "Clear focus";
+  clearBtn.style.marginLeft = "8px";
+  clearBtn.addEventListener("click", () => {
+    puzzleFocusFilter = null;
+    updatePuzzleFocusIndicator();
+    loadPuzzle();
+  });
+  puzzleFocusIndicator.appendChild(clearBtn);
+}
 
 function updatePuzzleStreakDisplay() {
   if (!currentUsername) return;
@@ -1156,6 +1266,17 @@ function updatePuzzleStreakDisplay() {
 function pickPuzzle(): Puzzle | null {
   const difficulty = puzzleDifficultySelect.value as Difficulty | "all";
   let pool = difficulty === "all" ? currentPuzzles : currentPuzzles.filter((p) => p.difficulty === difficulty);
+  if (puzzleFocusFilter) {
+    const focused = pool.filter(
+      (p) =>
+        (!puzzleFocusFilter!.phase || p.gamePhase === puzzleFocusFilter!.phase) &&
+        (!puzzleFocusFilter!.blunderTag || p.blunderTag === puzzleFocusFilter!.blunderTag),
+    );
+    // If the focus filter would leave nothing (small sample), fall back to
+    // the unfiltered pool rather than showing "no puzzles" -- the focus
+    // indicator stays on so the viewer knows it's not actually applying.
+    if (focused.length > 0) pool = focused;
+  }
   if (pool.length === 0) return null;
 
   const unsolved = currentUsername ? pool.filter((p) => !isSolved(currentUsername!, p.id)) : pool;

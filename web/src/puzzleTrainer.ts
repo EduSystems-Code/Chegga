@@ -24,6 +24,8 @@ export interface Puzzle {
   classification: string;
   difficulty: Difficulty;
   openingName?: string;
+  gamePhase: "opening" | "middlegame" | "endgame";
+  blunderTag?: string;
 }
 
 function difficultyFor(cpLoss: number): Difficulty {
@@ -60,6 +62,8 @@ export function extractPuzzles(games: GameRecord[], ownMoves: MoveAnalysisRecord
       classification: move.classification,
       difficulty: difficultyFor(move.centipawnLoss),
       openingName: game?.openingName,
+      gamePhase: move.gamePhase,
+      blunderTag: move.blunderTag,
     });
   }
 
