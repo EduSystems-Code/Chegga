@@ -110,16 +110,14 @@ app.innerHTML = `
       </section>
     </details>
 
-    <details class="collapsible" id="pk-taxonomy-details">
-      <summary>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</summary>
-      <section class="card">
-        <p class="tagline" style="margin-bottom:16px">
-          74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
-          a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
-        </p>
-        <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
-      </section>
-    </details>
+    <section class="card">
+      <h2>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
+        a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
+      </p>
+      <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
+    </section>
 
     <section class="card">
       <h2>Play vs. bot</h2>
