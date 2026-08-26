@@ -39,6 +39,7 @@ import { renderProfile } from "./profileView";
 import { computeOpeningFrequency, computeMoveFrequencyByDepth, topMovesPerOrigin } from "./openingExplorer";
 import { renderOpeningBoard } from "./openingBoard";
 import { renderCheatSheet } from "./cheatSheet";
+import { renderTaxonomyBrowser, wireTaxonomyBrowser } from "./pkTaxonomyView";
 import { PlayBoard } from "./playBoard";
 import { chooseBotMove } from "./botEngine";
 import { hasHangingPiece } from "./blunderTagger";
@@ -106,6 +107,17 @@ app.innerHTML = `
       <summary>New to chess? A full rules cheat sheet — setup, how pieces move, castling, tactics, and more</summary>
       <section class="card">
         ${renderCheatSheet()}
+      </section>
+    </details>
+
+    <details class="collapsible" id="pk-taxonomy-details">
+      <summary>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</summary>
+      <section class="card">
+        <p class="tagline" style="margin-bottom:16px">
+          74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
+          a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
+        </p>
+        <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
       </section>
     </details>
 
@@ -334,6 +346,7 @@ app.innerHTML = `
 `;
 
 setupCollapsibleCards();
+wireTaxonomyBrowser(document.querySelector<HTMLElement>("#pk-taxonomy-root")!);
 
 function setStatus(el: HTMLElement, text: string, kind: "ok" | "error" | "" = "") {
   el.textContent = text;
