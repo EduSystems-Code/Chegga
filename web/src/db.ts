@@ -15,9 +15,40 @@ const DB_NAME = "chegga-web";
 // moveAnalysis/syncState data.
 const DB_VERSION = 2;
 
+/** Real bug caught live (2026-08-26): a bare `indexedDB.open` with no
+ * `onblocked` handler and no timeout can hang forever -- neither
+ * `onsuccess` nor `onerror` ever fires -- if any other tab/connection
+ * still holds an older DB version open when a schema upgrade is needed.
+ * No exception, no console error, nothing to catch; every caller (the
+ * auto-sync-on-load IIFE in particular) just awaits it forever, which is
+ * why the Sync button it disables at the top of `runSync` can stay
+ * disabled permanently with no visible cause. A fresh profile (nothing
+ * else has ever opened the DB) or Incognito (no other tab exists at all)
+ * never hits this, which is exactly why it reproduced in one browser
+ * profile and not another. Fixed with both a real `onblocked` handler
+ * (surfaces the actual cause) and a hard timeout as defense in depth. */
+const OPEN_TIMEOUT_MS = 8000;
+
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    const timeout = setTimeout(() => {
+      reject(
+        new Error(
+          "Database open timed out -- likely blocked by another open tab of this site. Close other tabs/windows with this site open and reload.",
+        ),
+      );
+    }, OPEN_TIMEOUT_MS);
+
+    request.onblocked = () => {
+      clearTimeout(timeout);
+      reject(
+        new Error(
+          "Database upgrade blocked by another open tab of this site. Close other tabs/windows with this site open and reload.",
+        ),
+      );
+    };
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -52,8 +83,14 @@ export function openDb(): Promise<IDBDatabase> {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      clearTimeout(timeout);
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      clearTimeout(timeout);
+      reject(request.error);
+    };
   });
 }
 

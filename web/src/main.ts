@@ -935,7 +935,18 @@ fullSyncBtn.addEventListener("click", async () => {
   if (saved) {
     usernameInput.value = saved;
     currentUsername = saved;
-    await refreshProfile(); // show whatever's already analyzed immediately
+    try {
+      await refreshProfile(); // show whatever's already analyzed immediately
+    } catch (err: any) {
+      // Real bug caught live: refreshProfile's openDb() call can fail (a
+      // blocked/timed-out IndexedDB open -- see db.ts) before runSync ever
+      // runs, so runSync's own error message never has a chance to show.
+      // Uncaught, this was a silent failure -- nothing on screen, only a
+      // console error -- that looked exactly like "the page just doesn't
+      // work," indistinguishable from every button being broken.
+      setStatus(syncLog, `Couldn't load your saved data: ${err.message ?? err}`, "error");
+      return;
+    }
     await runSync(saved); // then catch up with anything new
   }
 })();
