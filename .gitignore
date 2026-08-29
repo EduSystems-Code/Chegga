@@ -1,29 +1,31 @@
-# Python
-backend/.venv/
+# Python (the FastAPI backend is archived under archive/ — see archive/README.md)
+archive/backend/.venv/
 **/__pycache__/
 *.pyc
-backend/.env
-backend/.pytest_cache/
+archive/backend/.env
+archive/backend/.pytest_cache/
 
 # Data (sqlite db and the trained strength model are local-only,
 # regenerable from real play data / a training run; the directory itself
 # is tracked via .gitkeep)
-backend/data/*.db
-backend/data/*.db-wal
-backend/data/*.db-shm
-backend/data/*.db-journal
-backend/data/*.joblib
-backend/data/*_meta.json
-!backend/data/.gitkeep
+archive/backend/data/*.db
+archive/backend/data/*.db-wal
+archive/backend/data/*.db-shm
+archive/backend/data/*.db-journal
+archive/backend/data/*.joblib
+archive/backend/data/*_meta.json
+!archive/backend/data/.gitkeep
 
 # Stockfish binary -- downloaded, not committed (platform-specific)
-backend/vendor/
+archive/backend/vendor/
 
-# Node / frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.env
-frontend/tsconfig.tsbuildinfo
+# Node / archived React frontend
+archive/frontend/node_modules/
+archive/frontend/dist/
+archive/frontend/.env
+archive/frontend/tsconfig.tsbuildinfo
+
+# The one live app is web/ — it has its own web/.gitignore
 
 # OS
 .DS_Store
