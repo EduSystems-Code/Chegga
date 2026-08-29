@@ -30,7 +30,7 @@ import {
   getSkillSnapshots,
   countSyncStatesForUsername,
 } from "./db";
-import type { GameRecord, ExportedData } from "./db";
+import type { GameRecord, MoveAnalysisRecord, ExportedData } from "./db";
 import { Engine } from "./engine";
 import { ChessComClient } from "./chessComClient";
 import { syncGames, quickSyncRecentGames } from "./syncService";
@@ -93,6 +93,16 @@ import {
 } from "./juice";
 import { assessSkills, type PrescriptionAction } from "./skillProfile";
 import { renderSkillProfile } from "./skillProfileView";
+import { computeRoadToTarget, averageFeatures, type RoadAction } from "./roadTo2000";
+import { renderRoadToTarget, ROAD_TARGET_OPTIONS } from "./roadTo2000View";
+import { computeBlunderRate } from "./blunderRate";
+import { renderBlunderRate } from "./blunderRateView";
+import { computeConsistency } from "./consistencyMetrics";
+import { renderConsistency } from "./consistencyView";
+import { buildWeeklyPlan, isoWeek, getDoneTasks, setTaskDone, type PlanActionKind } from "./weeklyPlan";
+import { renderWeeklyPlan } from "./weeklyPlanView";
+import { findThrownGames } from "./convertTheWin";
+import { renderThrownGames } from "./convertTheWinView";
 import { getProgress, isDue, recordAttempt, getStreak } from "./puzzleProgress";
 import { ENDGAME_DRILLS, ODDS_OPTIONS, oddsFen } from "./practicePositions";
 import {
@@ -188,7 +198,9 @@ app.innerHTML = `
 
     <nav class="section-nav" aria-label="Jump to section">
       <a href="#today-section">Today</a>
+      <a href="#weekly-plan-section">Plan</a>
       <a href="#sync-section">Get started</a>
+      <a href="#road-section">Road to rating</a>
       <a href="#profile-section">Profile</a>
       <a href="#lichess-puzzle-section">Puzzles</a>
       <a href="#play-section">Play</a>
@@ -244,6 +256,24 @@ app.innerHTML = `
         time.
       </p>
       <div id="focus-output"></div>
+    </section>
+
+    <section class="card" id="road-section" data-tier="primary" style="display:none">
+      <h2>Road to a target rating</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        The strength model, run backwards: pick a target and see which parts of your play it thinks are costing you
+        the most rating points — and what to do about each. A rough linear model, not a promise.
+      </p>
+      <div id="road-output"></div>
+    </section>
+
+    <section class="card" id="weekly-plan-section" data-tier="primary" style="display:none">
+      <h2>This week's plan</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        A seven-day training structure, weighted toward your weakest area, with the numbers filled in from your
+        puzzle rating and worst opening. Tick things off; it resets every Monday.
+      </p>
+      <div id="weekly-plan-output"></div>
     </section>
 
     <section class="card" id="profile-section" data-tier="primary" style="display:none">
@@ -451,6 +481,31 @@ app.innerHTML = `
     <section class="card" id="insights-section" data-tier="secondary" style="display:none">
       <h2>Insights</h2>
       <div id="insights-output" class="insights-list"></div>
+    </section>
+
+    <section class="card" id="blunder-rate-section" data-tier="secondary" style="display:none">
+      <h2>Blunder rate over time</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        One-move oversights per 100 moves — the single biggest rating leak below 2000. Watch this line fall.
+      </p>
+      <div id="blunder-rate-output"></div>
+    </section>
+
+    <section class="card" id="consistency-section" data-tier="secondary" style="display:none">
+      <h2>Consistency &amp; tilt</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        How your results hold up after a loss and deep into a session — measured from your own game history.
+      </p>
+      <div id="consistency-output"></div>
+    </section>
+
+    <section class="card" id="convert-section" data-tier="secondary" style="display:none">
+      <h2>Games you didn't convert</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Analyzed games where you reached a clearly winning position and drew or lost it — worst first, with the move
+        where it slipped.
+      </p>
+      <div id="convert-output"></div>
     </section>
 
     <section class="card" id="patterns-section" data-tier="secondary" style="display:none">
@@ -1549,6 +1604,101 @@ focusOutput.addEventListener("click", (e) => {
   }
 });
 
+// --- Road to a target rating / This week's plan / other growth cards ---
+
+const roadSection = document.querySelector<HTMLElement>("#road-section")!;
+const roadOutput = document.querySelector<HTMLDivElement>("#road-output")!;
+const weeklyPlanSection = document.querySelector<HTMLElement>("#weekly-plan-section")!;
+const weeklyPlanOutput = document.querySelector<HTMLDivElement>("#weekly-plan-output")!;
+const blunderRateSection = document.querySelector<HTMLElement>("#blunder-rate-section")!;
+const blunderRateOutput = document.querySelector<HTMLDivElement>("#blunder-rate-output")!;
+const consistencySection = document.querySelector<HTMLElement>("#consistency-section")!;
+const consistencyOutput = document.querySelector<HTMLDivElement>("#consistency-output")!;
+const convertSection = document.querySelector<HTMLElement>("#convert-section")!;
+const convertOutput = document.querySelector<HTMLDivElement>("#convert-output")!;
+
+let roadTarget = 2000;
+let lastRoadFeatures: Record<string, number> | null = null;
+let lastRoadEstimate = 0;
+
+function renderRoadOutput() {
+  if (!lastRoadFeatures) return;
+  const road = computeRoadToTarget(lastRoadFeatures, lastRoadEstimate, roadTarget);
+  roadOutput.innerHTML = renderRoadToTarget(road);
+}
+
+// One delegated handler each for the two cards whose innerHTML is
+// replaced wholesale on every data load (same reasoning as focusOutput).
+roadOutput.addEventListener("change", (e) => {
+  const sel = (e.target as HTMLElement).closest<HTMLSelectElement>("#road-target-select");
+  if (!sel) return;
+  const v = Number(sel.value);
+  roadTarget = (ROAD_TARGET_OPTIONS as readonly number[]).includes(v) ? v : 2000;
+  renderRoadOutput();
+});
+roadOutput.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".road-jump-btn");
+  if (!btn) return;
+  jumpToGrowthAction(JSON.parse(btn.dataset.action ?? "{}") as RoadAction | { kind: PlanActionKind; phase?: "opening" | "middlegame" | "endgame" });
+});
+
+weeklyPlanOutput.addEventListener("click", (e) => {
+  const jump = (e.target as HTMLElement).closest<HTMLButtonElement>(".plan-jump-btn");
+  if (jump) {
+    jumpToGrowthAction(JSON.parse(jump.dataset.action ?? "{}") as { kind: PlanActionKind; phase?: "opening" | "middlegame" | "endgame" });
+    return;
+  }
+});
+weeklyPlanOutput.addEventListener("change", (e) => {
+  const box = (e.target as HTMLElement).closest<HTMLInputElement>(".plan-check");
+  if (!box) return;
+  setTaskDone(lcUser(), isoWeek(), box.dataset.task ?? "", box.checked);
+  box.closest(".plan-task")?.classList.toggle("plan-task-done", box.checked);
+});
+
+/** Shared "take me to the right card" jump used by both the road factors
+ * and the weekly plan tasks. Superset of the focusOutput handler's kinds. */
+function jumpToGrowthAction(action: { kind: string; phase?: "opening" | "middlegame" | "endgame" }) {
+  switch (action.kind) {
+    case "openings":
+      expandCard("opening-section");
+      openingSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+    case "puzzle":
+      puzzleFocusFilter = action.phase ? { phase: action.phase } : null;
+      updatePuzzleFocusIndicator();
+      expandCard("puzzle-section");
+      loadPuzzle();
+      puzzleSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+    case "themed":
+      expandCard("lichess-puzzle-section");
+      document.querySelector("#lichess-puzzle-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+    case "drill":
+      expandCard("practice-section");
+      drillSelect.closest("section.card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+    case "vision":
+      expandCard("vision-section");
+      visionSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+    case "play":
+      expandCard("play-section");
+      document.querySelector("#play-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+    case "redemption":
+      expandCard("redemption-section");
+      document.querySelector("#redemption-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+  }
+}
+
+function suggestedBotElo(): number {
+  const r = getRating(lcUser()).rating;
+  return Math.max(800, Math.min(2400, Math.round(r / 50) * 50));
+}
+
 /** One snapshot per calendar day per visitor -- frequent enough to build a
  * real trend over weeks of use, not so frequent that re-opening the app
  * five times in one afternoon fills the store with noise (putSkillSnapshot
@@ -1629,6 +1779,13 @@ async function refreshProfile() {
     updateLichessRatingReadout();
     renderTodaySection();
     refreshAchievements();
+    // These need analyzed moves -- keep them hidden until analysis runs.
+    roadSection.style.display = "none";
+    weeklyPlanSection.style.display = "none";
+    blunderRateSection.style.display = "none";
+    convertSection.style.display = "none";
+    // Consistency only needs synced game results.
+    renderGrowthConsistency(allGames, []);
     return;
   }
   clearEmptyFor("profile-section");
@@ -1705,6 +1862,71 @@ async function refreshProfile() {
   maybeUpgradeToday();
   renderTodaySection();
   refreshAchievements();
+
+  // --- Growth cards (Road to rating / Weekly plan / Blunder rate /
+  // Consistency / Games you didn't convert) ---
+  renderGrowthCards(analyzedGames, ownMoves, allGames, strength, assessment);
+}
+
+function renderGrowthConsistency(allGames: GameRecord[], ownMoves: MoveAnalysisRecord[]) {
+  const consistency = computeConsistency(allGames, ownMoves);
+  if (consistency) {
+    consistencySection.style.display = "";
+    consistencyOutput.innerHTML = renderConsistency(consistency);
+  } else {
+    consistencySection.style.display = "none";
+  }
+}
+
+function renderGrowthCards(
+  analyzedGames: GameRecord[],
+  ownMoves: MoveAnalysisRecord[],
+  allGames: GameRecord[],
+  strength: { avgEstimate: number } | undefined,
+  assessment: ReturnType<typeof assessSkills>,
+) {
+  // Road to a target rating -- needs the strength estimate.
+  const features = averageFeatures(analyzedGames, ownMoves);
+  if (features && strength) {
+    lastRoadFeatures = features;
+    lastRoadEstimate = strength.avgEstimate;
+    roadSection.style.display = "";
+    renderRoadOutput();
+  } else {
+    roadSection.style.display = "none";
+  }
+
+  // This week's plan.
+  const weakOpening = weakestOpening(analyzedGames, ownMoves);
+  const plan = buildWeeklyPlan({
+    focus: assessment.weakest?.category ?? null,
+    puzzleRating: getRating(lcUser()).rating,
+    weakestOpeningName: weakOpening?.openingName,
+    botElo: suggestedBotElo(),
+  });
+  weeklyPlanSection.style.display = "";
+  weeklyPlanOutput.innerHTML = renderWeeklyPlan(plan, getDoneTasks(lcUser(), plan.isoWeek));
+
+  // Blunder rate over time.
+  const blunderRate = computeBlunderRate(analyzedGames, ownMoves);
+  if (blunderRate) {
+    blunderRateSection.style.display = "";
+    blunderRateOutput.innerHTML = renderBlunderRate(blunderRate);
+  } else {
+    blunderRateSection.style.display = "none";
+  }
+
+  // Consistency & tilt.
+  renderGrowthConsistency(allGames, ownMoves);
+
+  // Games you didn't convert.
+  const thrown = findThrownGames(analyzedGames, ownMoves);
+  if (thrown.length > 0) {
+    convertSection.style.display = "";
+    convertOutput.innerHTML = renderThrownGames(thrown);
+  } else {
+    convertSection.style.display = "none";
+  }
 }
 
 // --- Insights (quick-win stats derived from data already computed) ---

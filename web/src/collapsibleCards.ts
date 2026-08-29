@@ -33,7 +33,9 @@ const STATE_KEY_PREFIX = "chegga-web:card-collapsed:";
 // collapsed strip the player has to hunt for and click.
 const DEFAULT_EXPANDED_IDS = new Set([
   "today-section",
+  "weekly-plan-section",
   "focus-section",
+  "road-section",
   "sync-section",
   "profile-section",
   "puzzle-section",

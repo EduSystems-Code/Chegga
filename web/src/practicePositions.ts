@@ -52,6 +52,41 @@ export const ENDGAME_DRILLS: EndgameDrill[] = [
     practicingColor: "black",
     objective: "Black to move: stop White's knight from either winning the pawn or holding it back — a real defensive test.",
   },
+  {
+    id: "lucena",
+    name: "Rook endgame: the Lucena position (win)",
+    fen: "1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1",
+    practicingColor: "white",
+    objective: "The most important winning rook endgame. Promote the pawn by 'building a bridge' with your rook to block the checks.",
+  },
+  {
+    id: "philidor",
+    name: "Rook endgame: the Philidor defence (draw)",
+    fen: "3k4/R7/3KP3/8/8/8/8/5r2 b - - 0 1",
+    practicingColor: "black",
+    objective: "Black to move and hold the draw: keep your rook on the third rank until the pawn advances, then check from behind.",
+  },
+  {
+    id: "kp-distant-opposition",
+    name: "King + Pawn: distant opposition (win)",
+    fen: "8/8/8/3k4/8/8/3P4/3K4 w - - 0 1",
+    practicingColor: "white",
+    objective: "Win by taking the opposition before pushing the pawn — a step early or late and it's only a draw.",
+  },
+  {
+    id: "q-vs-r",
+    name: "Queen vs. Rook (win)",
+    fen: "8/8/8/8/8/2k5/1r6/2KQ4 w - - 0 1",
+    practicingColor: "white",
+    objective: "The Philidor position in Q vs R. Win by forcing the defending king and rook apart — a hard technique worth knowing.",
+  },
+  {
+    id: "kpp-connected",
+    name: "King + two connected pawns vs. King (win)",
+    fen: "8/8/8/3k4/8/3PP3/8/3K4 w - - 0 1",
+    practicingColor: "white",
+    objective: "Escort the connected passers to promotion — keep them side by side so they defend each other.",
+  },
 ];
 
 export const ODDS_OPTIONS = [
