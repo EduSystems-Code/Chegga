@@ -77,6 +77,39 @@ export function playGameEndSound(won: boolean): void {
   }
 }
 
+/** A short, bright rising triad — a puzzle solved / correct answer. */
+export function playSuccessSound(): void {
+  tone(523, 90, "sine");
+  tone(659, 90, "sine", 70);
+  tone(784, 160, "sine", 140);
+}
+
+/** A soft, low double-thud — a wrong answer. Deliberately gentle, not a
+ * harsh buzzer: getting a hard puzzle wrong shouldn't feel punishing. */
+export function playFailSound(): void {
+  tone(200, 120, "sine");
+  tone(150, 160, "sine", 90);
+}
+
+/** A quick 4-note arpeggio flourish — achievement unlocked / rating
+ * milestone crossed. */
+export function playLevelUpSound(): void {
+  tone(523, 80, "triangle");
+  tone(659, 80, "triangle", 70);
+  tone(784, 80, "triangle", 140);
+  tone(1047, 220, "triangle", 210);
+}
+
+/** A little 5-note fanfare — the whole Today set complete, or beating the
+ * bot. The biggest sound in the app; used sparingly. */
+export function playFanfareSound(): void {
+  tone(523, 110, "sine");
+  tone(523, 110, "sine", 120);
+  tone(523, 110, "sine", 240);
+  tone(659, 140, "sine", 360);
+  tone(784, 320, "sine", 480);
+}
+
 export function isSoundEnabled(): boolean {
   try {
     return localStorage.getItem(STORAGE_KEY) !== "0"; // on by default

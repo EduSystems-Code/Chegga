@@ -16,6 +16,7 @@
 
 import type { MoveFrequency } from "./openingExplorer";
 import { CLASSIFICATION_ORDER, getClassColor } from "./classificationColors";
+import { svgPiecePart } from "./pieceSet";
 
 const SQUARE = 60;
 const MARGIN = 28;
@@ -26,14 +27,19 @@ const SQUARE_LIGHT = "#252c3a";
 const SQUARE_DARK = "#161a22";
 const SQUARE_BORDER = "#323a4a";
 
-// Standard starting position, Unicode chess glyphs. Rendered dim/behind
-// the data layer -- a recognizable board, not the focal point.
-const START_POSITION: Record<string, string> = {
-  a1: "♖", b1: "♘", c1: "♗", d1: "♕", e1: "♔", f1: "♗", g1: "♘", h1: "♖",
-  a2: "♙", b2: "♙", c2: "♙", d2: "♙", e2: "♙", f2: "♙", g2: "♙", h2: "♙",
-  a7: "♟", b7: "♟", c7: "♟", d7: "♟", e7: "♟", f7: "♟", g7: "♟", h7: "♟",
-  a8: "♜", b8: "♞", c8: "♝", d8: "♛", e8: "♚", f8: "♝", g8: "♞", h8: "♜",
-};
+// Standard starting position as (color, type) pairs. Rendered dim/behind
+// the data layer -- a recognizable board, not the focal point. The active
+// piece set (pieceSet.ts) decides whether each comes out as an <image> or
+// a Unicode <text> glyph.
+const BACK_RANK = ["r", "n", "b", "q", "k", "b", "n", "r"];
+const START_POSITION: Record<string, { c: string; t: string }> = {};
+for (let f = 0; f < 8; f++) {
+  const file = String.fromCharCode(97 + f);
+  START_POSITION[`${file}1`] = { c: "w", t: BACK_RANK[f] };
+  START_POSITION[`${file}2`] = { c: "w", t: "p" };
+  START_POSITION[`${file}7`] = { c: "b", t: "p" };
+  START_POSITION[`${file}8`] = { c: "b", t: BACK_RANK[f] };
+}
 // Light enough to actually read against the dark squares (#161a22 /
 // #252c3a) at low opacity -- an earlier version used near-black fills
 // that were technically in the DOM but visually invisible.
@@ -71,11 +77,10 @@ function boardSquares(): string {
 
 function boardPieces(): string {
   let out = "";
-  for (const [square, glyph] of Object.entries(START_POSITION)) {
+  for (const [square, { c, t }] of Object.entries(START_POSITION)) {
     const { x, y } = squareCenter(square);
-    const rank = parseInt(square[1], 10);
-    const color = rank <= 2 ? WHITE_PIECE_COLOR : BLACK_PIECE_COLOR;
-    out += `<text x="${x}" y="${y + 12}" font-size="38" text-anchor="middle" fill="${color}" opacity="0.55">${glyph}</text>`;
+    const glyphFill = c === "w" ? WHITE_PIECE_COLOR : BLACK_PIECE_COLOR;
+    out += svgPiecePart(c, t, x, y, SQUARE, 0.55, glyphFill);
   }
   return out;
 }

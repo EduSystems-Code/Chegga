@@ -14,6 +14,7 @@ import { installErrorOverlay } from "./errorOverlay";
 installErrorOverlay(); // first, before anything else can throw
 
 import "./style.css";
+import { showEmptyStates, emptyFor, clearEmptyFor, wireEmptyStateCtas } from "./emptyStates";
 import {
   openDb,
   putGame,
@@ -54,9 +55,45 @@ import {
   roughRatingBandContext,
 } from "./statsInsights";
 import { extractPuzzles, type Puzzle, type Difficulty } from "./puzzleTrainer";
+import {
+  ensureCuratedPuzzlesLoaded,
+  pickCuratedPuzzle,
+  describeThemes,
+  THEME_OPTIONS,
+} from "./curatedPuzzles";
+import type { CuratedPuzzleRecord } from "./db";
+import { getRating, seedRating, applyResult, ratingSparkline } from "./puzzleRating";
+import { isRedeemed, markRedeemed, redeemedCount } from "./redemptionProgress";
+import {
+  buildToday,
+  getToday,
+  saveToday,
+  bumpToday,
+  isTodayComplete,
+  getTodayStreak,
+  recordTodayComplete,
+  type TodayKind,
+} from "./today";
+import { renderToday } from "./todayView";
+import { renderRedemptionList, type RedemptionRow } from "./redemptionView";
+import { ACHIEVEMENTS, checkAchievements, getUnlocked, type AchievementStats } from "./achievements";
+import { recordBotResult, bestWinElo } from "./botStats";
+import { PIECE_SET_OPTIONS, getPieceSet, setPieceSet } from "./pieceSet";
+import {
+  confetti,
+  celebrate,
+  bump,
+  shake,
+  flash,
+  floatText,
+  countUp,
+  achievementBanner,
+  effectsEnabled,
+  setEffectsEnabled,
+} from "./juice";
 import { assessSkills, type PrescriptionAction } from "./skillProfile";
 import { renderSkillProfile } from "./skillProfileView";
-import { getProgress, isSolved, recordAttempt, getStreak } from "./puzzleProgress";
+import { getProgress, isDue, recordAttempt, getStreak } from "./puzzleProgress";
 import { ENDGAME_DRILLS, ODDS_OPTIONS, oddsFen } from "./practicePositions";
 import {
   computeEndingBreakdown,
@@ -71,6 +108,8 @@ import { renderGamePatterns } from "./gamePatternsView";
 import { computeRivalRecords, computeRivalInsights } from "./rivalTracking";
 import { renderRivalTracking } from "./rivalTrackingView";
 import { setupCollapsibleCards, expandCard } from "./collapsibleCards";
+import { setupFeedbackWidget } from "./feedback";
+import { setupFeedbackForm } from "./feedbackForm";
 import { BOARD_THEMES, applyBoardTheme, loadSavedBoardTheme } from "./boardTheme";
 import {
   analyzePosition,
@@ -81,7 +120,18 @@ import {
   getAnalysisEngine,
 } from "./analysisPanel";
 import { analyzeFinishedBotGame, renderPostGameReport, buildAnnotatedPgn, downloadTextFile } from "./postGameReport";
-import { playMoveSound, playCaptureSound, playCheckSound, playGameEndSound, isSoundEnabled, setSoundEnabled } from "./soundEffects";
+import {
+  playMoveSound,
+  playCaptureSound,
+  playCheckSound,
+  playGameEndSound,
+  playSuccessSound,
+  playFailSound,
+  playLevelUpSound,
+  playFanfareSound,
+  isSoundEnabled,
+  setSoundEnabled,
+} from "./soundEffects";
 import { saveBotGame, loadSavedBotGame, clearSavedBotGame } from "./botGameStorage";
 import { createProgressBar } from "./progressBar";
 import { isColorblindPalette, setColorblindPalette } from "./classificationColors";
@@ -98,82 +148,95 @@ const MOVES_PER_ORIGIN_SQUARE = 3;
 const QUICK_SYNC_GAME_TARGET = 30;
 // And the first-look analysis that auto-runs right after that quick
 // sync, so there's something to actually look at without a second click.
-const QUICK_SYNC_ANALYZE_COUNT = 10;
+const QUICK_SYNC_ANALYZE_COUNT = 25;
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="wrap">
-    <div class="header">
-      <h1><span class="text-accent">Chegga</span> Web</h1>
-    </div>
-    <p class="tagline">Your Chess.com games, analyzed in your browser — nothing leaves your device.</p>
+    <header class="header">
+      <div class="brand">
+        <svg class="brand-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true">
+          <rect width="64" height="64" rx="14" fill="#12151b" />
+          <rect x="12" y="12" width="10" height="10" fill="#e3a857" />
+          <rect x="32" y="12" width="10" height="10" fill="#e3a857" />
+          <rect x="22" y="22" width="10" height="10" fill="#e3a857" />
+          <rect x="42" y="22" width="10" height="10" fill="#e3a857" />
+          <rect x="12" y="32" width="10" height="10" fill="#e3a857" />
+          <rect x="32" y="32" width="10" height="10" fill="#e3a857" />
+          <rect x="22" y="42" width="10" height="10" fill="#e3a857" />
+          <rect x="42" y="42" width="10" height="10" fill="#e3a857" />
+          <rect x="12" y="12" width="40" height="40" fill="none" stroke="#f0be73" stroke-width="2" />
+        </svg>
+        <h1><span class="text-accent">Chegga</span> Web</h1>
+      </div>
+      <button type="button" id="feedback-btn" class="feedback-btn" hidden>Feedback</button>
+    </header>
 
-    <section class="card" id="sync-section">
-      <h2>1. Connect your Chess.com username</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Chess.com already shows you one game at a time. This looks across every game you've ever played to find the
-        patterns a single review can't: which openings actually win for you, what kind of blunder you make most, and
-        whether time pressure or a specific game phase is where you lose the most ground. Nothing is uploaded
-        anywhere — the sync and the analysis both run right here in this browser tab.
+    <section class="hero" aria-labelledby="hero-title">
+      <h2 id="hero-title">The patterns in your chess that a single game review can't show you.</h2>
+      <p>
+        Connect your Chess.com username and every game you've ever played is analyzed right here in your
+        browser — your real opening results, the mistake you keep making, where time pressure costs you.
+        Nothing is uploaded.
       </p>
+      <div class="hero-cta">
+        <button type="button" id="hero-analyze-btn">Analyze my games</button>
+        <button type="button" id="hero-play-btn" class="btn-ghost">Play a bot instead</button>
+      </div>
+    </section>
+
+    <nav class="section-nav" aria-label="Jump to section">
+      <a href="#today-section">Today</a>
+      <a href="#sync-section">Get started</a>
+      <a href="#profile-section">Profile</a>
+      <a href="#lichess-puzzle-section">Puzzles</a>
+      <a href="#play-section">Play</a>
+      <a href="#opening-section">Explore</a>
+      <a href="#feedback-form-details">Feedback</a>
+    </nav>
+
+    <main id="main-content">
+    <section class="card" id="today-section" data-tier="primary">
+      <h2>Today</h2>
       <p class="tagline" style="margin-bottom:16px">
-        First sync pulls your most recent games only, so you see what this does in seconds instead of waiting on
-        your whole history — grab everything else with one click once you've had a look.
+        One regimented set a day — aimed at your weakest area, with a clear finish line. Keep going past it if you
+        want; nothing here is locked.
+      </p>
+      <div id="today-output"></div>
+    </section>
+
+    <section class="card" id="sync-section" data-tier="primary">
+      <h2>Get started — connect your Chess.com username</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        The first sync pulls just your recent games, so you see results in seconds; one click grabs the rest later.
+        No account? Jump to <strong>Play vs. bot</strong> below instead.
       </p>
       <form id="sync-form" class="row">
+        <label for="username" class="sr-only">Chess.com username</label>
         <input id="username" type="text" placeholder="e.g. MichaelBottega" autocomplete="off" required />
         <button type="submit" id="sync-btn">Sync games</button>
       </form>
-      <p id="sync-log" class="status-line">enter a username and click Sync.</p>
+      <p id="sync-log" class="status-line"></p>
       <div id="sync-progress"></div>
-      <p class="status-line">This keeps running while you look at other sections — no need to wait here.</p>
       <p id="full-sync-prompt" class="status-line status-ok" style="display:none">
         <span id="full-sync-prompt-text"></span> <button type="button" id="full-sync-btn">Get my full history</button>
       </p>
-    </section>
-
-    <section class="card">
-      <h2>2. Analyze your games</h2>
+      <h3 style="margin-top:24px">Analyze more games</h3>
       <p class="tagline" style="margin-bottom:16px">
         A quick first batch analyzes automatically right after your first sync — use this to analyze more, any
         time.
       </p>
       <form id="analyze-recent-form" class="row">
+        <label for="analyze-count" class="sr-only">Number of recent games to analyze</label>
         <input id="analyze-count" type="number" min="1" max="200" value="10" />
         <button type="submit" id="analyze-recent-btn">Analyze most recent</button>
       </form>
-      <p id="analyze-recent-log" class="status-line">games are analyzed newest-first, right here in your browser.</p>
+      <p id="analyze-recent-log" class="status-line"></p>
       <div id="analyze-progress"></div>
     </section>
 
-    <section class="card" id="profile-section" style="display:none">
-      <h2>Your profile</h2>
-      <div id="profile-output"></div>
-    </section>
-
-    <section class="card" id="insights-section" style="display:none">
-      <h2>Insights</h2>
-      <div id="insights-output" class="insights-list"></div>
-    </section>
-
-    <section class="card" id="patterns-section" style="display:none">
-      <h2>Game patterns</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        From every synced game, not just the ones analyzed by the engine — how your games end, your rating over
-        time, and how you do against different opponent strengths.
-      </p>
-      <div id="patterns-output"></div>
-    </section>
-
-    <section class="card" id="rivals-section" style="display:none">
-      <h2>Rivals</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Opponents you've faced more than once — your real record against each one, not just a lifetime win rate.
-      </p>
-      <div id="rivals-output"></div>
-    </section>
-
-    <section class="card" id="focus-section" style="display:none">
+    <section class="card" id="focus-section" data-tier="primary" style="display:none">
       <h2>Your focus</h2>
       <p class="tagline" style="margin-bottom:16px">
         A rule-based read on exactly where your play is weakest right now, one specific thing to practice for it, and
@@ -183,14 +246,88 @@ app.innerHTML = `
       <div id="focus-output"></div>
     </section>
 
-    <details class="collapsible">
-      <summary>New to chess? A full rules cheat sheet — setup, how pieces move, castling, tactics, and more</summary>
-      <section class="card">
-        ${renderCheatSheet()}
-      </section>
-    </details>
+    <section class="card" id="profile-section" data-tier="primary" style="display:none">
+      <h2>Your profile</h2>
+      <div id="profile-output"></div>
+    </section>
 
-    <section class="card">
+    <section class="card" id="puzzle-section" data-tier="primary" style="display:none">
+      <h2>Puzzle trainer — your own blunders</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Real positions from your own games, right before you made a mistake. Find the move you missed.
+      </p>
+      <div class="play-controls">
+        <label for="puzzle-difficulty">Difficulty</label>
+        <select id="puzzle-difficulty">
+          <option value="all">All</option>
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+        <button type="button" id="puzzle-next-btn">Next puzzle</button>
+        <span id="puzzle-streak" class="status-line"></span>
+      </div>
+      <p id="puzzle-focus-indicator" class="status-line status-ok" style="display:none"></p>
+      <div class="play-layout">
+        <div class="play-board-wrap" id="puzzle-board-wrap"></div>
+        <div class="play-sidebar">
+          <p id="puzzle-status" class="status-line">Click "Next puzzle" to start.</p>
+          <p id="puzzle-progress" class="status-line"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="lichess-puzzle-section" data-tier="primary">
+      <h2>Themed puzzles — tactics library</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        ~99,000 puzzles from the <a href="https://database.lichess.org" target="_blank" rel="noopener">Lichess open
+        database</a> (CC0), tagged by tactic and rated. Pick a theme and difficulty — or let "Your focus" and the PK
+        taxonomy point you at one. Nothing is uploaded; the set loads once into this browser.
+      </p>
+      <p id="lichess-rating-readout" class="status-line" style="margin-bottom:12px"></p>
+      <div class="play-controls">
+        <label for="lichess-theme">Theme</label>
+        <select id="lichess-theme"></select>
+        <label for="lichess-rating">Difficulty</label>
+        <select id="lichess-rating">
+          <option value="match" selected>Match my rating (±120)</option>
+          <option value="600-1000">Beginner (600–1000)</option>
+          <option value="1000-1400">Casual (1000–1400)</option>
+          <option value="1400-1800">Intermediate (1400–1800)</option>
+          <option value="1800-2200">Advanced (1800–2200)</option>
+          <option value="2200-2600">Expert (2200–2600)</option>
+        </select>
+        <button type="button" id="lichess-next-btn">Next puzzle</button>
+        <span id="lichess-streak" class="status-line"></span>
+      </div>
+      <div id="lichess-load-progress"></div>
+      <p id="lichess-focus-indicator" class="status-line status-ok" style="display:none"></p>
+      <div class="play-layout">
+        <div class="play-board-wrap" id="lichess-board-wrap"></div>
+        <div class="play-sidebar">
+          <p id="lichess-status" class="status-line">Pick a theme and click "Next puzzle".</p>
+          <p id="lichess-progress" class="status-line"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="redemption-section" data-tier="secondary" style="display:none">
+      <h2>Redeem a loss</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Every blunder the engine found in your games, worst first. Pick one, play the position again from the
+        mistake — first move has to match the engine, then play it out against the bot at the opponent's strength.
+      </p>
+      <div class="play-layout">
+        <div class="play-board-wrap" id="redemption-board-wrap"></div>
+        <div class="play-sidebar">
+          <p id="redemption-status" class="status-line">Pick a loss from the list to replay it.</p>
+          <p id="redemption-progress" class="status-line"></p>
+        </div>
+      </div>
+      <div id="redemption-output"></div>
+    </section>
+
+    <section class="card" id="play-section" data-tier="primary">
       <h2>Play vs. bot</h2>
       <p class="tagline" style="margin-bottom:16px">
         A real Stockfish opponent, scaled anywhere from 100 to 3000 Elo — runs entirely in your browser, no account
@@ -225,11 +362,16 @@ app.innerHTML = `
         <label class="play-checkbox-label"><input type="checkbox" id="bot-show-analysis" /> Show live analysis (eval bar + best move)</label>
         <label class="play-checkbox-label"><input type="checkbox" id="bot-show-heatmap" /> Show square control</label>
         <label class="play-checkbox-label"><input type="checkbox" id="bot-sound-enabled" checked /> Sound</label>
+        <label class="play-checkbox-label"><input type="checkbox" id="fx-enabled" checked /> Effects (confetti, animations)</label>
       </div>
       <div class="play-controls">
         <label for="board-theme">Board theme</label>
         <select id="board-theme">
           ${BOARD_THEMES.map((t) => `<option value="${t.id}">${t.label}</option>`).join("")}
+        </select>
+        <label for="piece-set">Pieces</label>
+        <select id="piece-set">
+          ${PIECE_SET_OPTIONS.map((o) => `<option value="${o.id}">${o.label}</option>`).join("")}
         </select>
         <label class="play-checkbox-label"><input type="checkbox" id="colorblind-palette" /> Colorblind-safe move colors</label>
       </div>
@@ -254,48 +396,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="card">
-      <h2>Practice positions</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Standard endgame technique drills, playable right in the board above — no synced account needed.
-      </p>
-      <div class="play-controls">
-        <label for="drill-select">Drill</label>
-        <select id="drill-select">
-          ${ENDGAME_DRILLS.map((d) => `<option value="${d.id}">${d.name}</option>`).join("")}
-        </select>
-        <button type="button" id="drill-load-btn">Load drill</button>
-      </div>
-      <p id="drill-objective" class="status-line"></p>
-    </section>
-
-    <section class="card" id="puzzle-section" style="display:none">
-      <h2>Puzzle trainer — your own blunders</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Real positions from your own games, right before you made a mistake. Find the move you missed.
-      </p>
-      <div class="play-controls">
-        <label for="puzzle-difficulty">Difficulty</label>
-        <select id="puzzle-difficulty">
-          <option value="all">All</option>
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-        </select>
-        <button type="button" id="puzzle-next-btn">Next puzzle</button>
-        <span id="puzzle-streak" class="status-line"></span>
-      </div>
-      <p id="puzzle-focus-indicator" class="status-line status-ok" style="display:none"></p>
-      <div class="play-layout">
-        <div class="play-board-wrap" id="puzzle-board-wrap"></div>
-        <div class="play-sidebar">
-          <p id="puzzle-status" class="status-line">Click "Next puzzle" to start.</p>
-          <p id="puzzle-progress" class="status-line"></p>
-        </div>
-      </div>
-    </section>
-
-    <section class="card" id="vision-section" style="display:none">
+    <section class="card" id="vision-section" data-tier="secondary" style="display:none">
       <h2>Vision trainer — is anything hanging?</h2>
       <p class="tagline" style="margin-bottom:16px">Real positions from your own games. Quick yes/no.</p>
       <div class="play-layout">
@@ -310,6 +411,99 @@ app.innerHTML = `
         </div>
       </div>
     </section>
+
+    <section class="card" id="opening-section" data-tier="secondary" style="display:none">
+      <h2>Move explorer</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Every line is a move you've made, anywhere in the game — more solid and thicker means you play it more
+        often, and the color shows how well it tends to go for you.
+      </p>
+      <div class="opening-tabs">
+        <button type="button" class="tab active" data-color="white">As White</button>
+        <button type="button" class="tab" data-color="black">As Black</button>
+      </div>
+      <div id="opening-output"></div>
+    </section>
+
+    <section class="card" id="depth-section" data-tier="secondary" style="display:none">
+      <h2>Move-by-move heatmap</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Games stacked on top of each other by move number — your 1st move across every game, then your 2nd, and so
+        on. Step through with the arrows or the ← → keys.
+      </p>
+      <div class="opening-tabs">
+        <button type="button" class="tab active" data-depth-color="white">As White</button>
+        <button type="button" class="tab" data-depth-color="black">As Black</button>
+      </div>
+      <div class="depth-stepper">
+        <button type="button" id="depth-prev" aria-label="Previous move number">◀</button>
+        <span id="depth-label" class="depth-label">Move #1</span>
+        <button type="button" id="depth-next" aria-label="Next move number">▶</button>
+      </div>
+      <div id="depth-output"></div>
+    </section>
+
+    <section class="card" id="achievements-section" data-tier="secondary">
+      <h2>Achievements</h2>
+      <div id="achievements-output"></div>
+    </section>
+
+    <section class="card" id="insights-section" data-tier="secondary" style="display:none">
+      <h2>Insights</h2>
+      <div id="insights-output" class="insights-list"></div>
+    </section>
+
+    <section class="card" id="patterns-section" data-tier="secondary" style="display:none">
+      <h2>Game patterns</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        From every synced game, not just the ones analyzed by the engine — how your games end, your rating over
+        time, and how you do against different opponent strengths.
+      </p>
+      <div id="patterns-output"></div>
+    </section>
+
+    <section class="card" id="rivals-section" data-tier="secondary" style="display:none">
+      <h2>Rivals</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Opponents you've faced more than once — your real record against each one, not just a lifetime win rate.
+      </p>
+      <div id="rivals-output"></div>
+    </section>
+
+    <section class="card" id="practice-section" data-tier="secondary">
+      <h2>Practice positions</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Standard endgame technique drills, playable right in the Play vs. bot board — no synced account needed.
+      </p>
+      <div class="play-controls">
+        <label for="drill-select">Drill</label>
+        <select id="drill-select">
+          ${ENDGAME_DRILLS.map((d) => `<option value="${d.id}">${d.name}</option>`).join("")}
+        </select>
+        <button type="button" id="drill-load-btn">Load drill</button>
+      </div>
+      <p id="drill-objective" class="status-line"></p>
+    </section>
+
+    <p class="section-divider">Reference &amp; tools</p>
+
+    <details class="collapsible" id="feedback-form-details">
+      <summary>Send feedback — bugs, ideas, anything that felt off</summary>
+      <section class="card">
+        <p class="tagline" style="margin-bottom:16px">
+          Goes straight to a short form. For feature requests you can also use the
+          <strong>Feedback</strong> button at the top of the page.
+        </p>
+        <div id="tally-embed"></div>
+      </section>
+    </details>
+
+    <details class="collapsible">
+      <summary>New to chess? A full rules cheat sheet — setup, how pieces move, castling, tactics, and more</summary>
+      <section class="card">
+        ${renderCheatSheet()}
+      </section>
+    </details>
 
     <details class="collapsible">
       <summary>Back up or move your data (export / import)</summary>
@@ -328,51 +522,23 @@ app.innerHTML = `
       </section>
     </details>
 
-    <section class="card" id="opening-section" style="display:none">
-      <h2>Move explorer</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Every line is a move you've made, anywhere in the game — more solid and thicker means you play it more
-        often, and the color shows how well it tends to go for you.
-      </p>
-      <div class="opening-tabs">
-        <button type="button" class="tab active" data-color="white">As White</button>
-        <button type="button" class="tab" data-color="black">As Black</button>
-      </div>
-      <div id="opening-output"></div>
-    </section>
-
-    <section class="card" id="depth-section" style="display:none">
-      <h2>Move-by-move heatmap</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        Games stacked on top of each other by move number — your 1st move across every game, then your 2nd, and so
-        on. Step through with the arrows or the ← → keys.
-      </p>
-      <div class="opening-tabs">
-        <button type="button" class="tab active" data-depth-color="white">As White</button>
-        <button type="button" class="tab" data-depth-color="black">As Black</button>
-      </div>
-      <div class="depth-stepper">
-        <button type="button" id="depth-prev" aria-label="Previous move number">◀</button>
-        <span id="depth-label" class="depth-label">Move #1</span>
-        <button type="button" id="depth-next" aria-label="Next move number">▶</button>
-      </div>
-      <div id="depth-output"></div>
-    </section>
-
-    <section class="card">
-      <h2>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
-        a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
-      </p>
-      <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
-    </section>
+    <details class="collapsible">
+      <summary>PK Mastery taxonomy — the full skill map behind Chegga's curriculum (draft)</summary>
+      <section class="card">
+        <p class="tagline" style="margin-bottom:16px">
+          74 draft concept nodes across 5 domains and 5 rating tiers, each with its prerequisites — the design behind
+          a coming prescriptive curriculum layer. Browse-only for now: puzzle content isn't wired to these nodes yet.
+        </p>
+        <div id="pk-taxonomy-root">${renderTaxonomyBrowser()}</div>
+      </section>
+    </details>
 
     <details class="collapsible">
       <summary>Developer tools (engine handshake check, raw PGN analysis, IndexedDB status)</summary>
       <section class="card">
         <h3>Analyze a single pasted PGN</h3>
         <form id="analyze-form">
+          <label for="pgn-input" class="sr-only">PGN to analyze</label>
           <textarea id="pgn-input" rows="5" placeholder="Paste a PGN here (must include [TimeControl])"></textarea>
           <button type="submit" id="analyze-btn">Analyze</button>
         </form>
@@ -384,11 +550,75 @@ app.innerHTML = `
         <pre id="db-log" class="log">opening…</pre>
       </section>
     </details>
+    </main>
+    <footer class="site-footer">
+      <p>
+        Puzzle data from the <a href="https://database.lichess.org" target="_blank" rel="noopener">Lichess open database</a> (CC0).
+        Piece sets <strong>Cburnett</strong> (© Colin M.L. Burnett) and <strong>Merida</strong> (© Armando Hernandez Marroquin),
+        <a href="https://www.gnu.org/licenses/gpl-2.0.txt" target="_blank" rel="noopener">GPLv2+</a>, via
+        <a href="https://github.com/lichess-org/lila" target="_blank" rel="noopener">lichess-org/lila</a>.
+        Not affiliated with Chess.com or Lichess.
+      </p>
+    </footer>
   </div>
 `;
 
 setupCollapsibleCards();
-wireTaxonomyBrowser(document.querySelector<HTMLElement>("#pk-taxonomy-root")!);
+wireEmptyStateCtas();
+showEmptyStates(); // seed data-dependent cards for a visitor with no synced account (redesign #5)
+setupFeedbackWidget(); // Featurebase widget — org slug "mibottega" set in feedback.ts
+setupFeedbackForm(); // Tally form — loads on first open of the "Send feedback" card
+
+// Hero CTAs: scroll to the relevant card and put the cursor where it's needed.
+document.getElementById("hero-analyze-btn")?.addEventListener("click", () => {
+  document.getElementById("sync-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.setTimeout(() => document.getElementById("username")?.focus(), 400);
+});
+document.getElementById("hero-play-btn")?.addEventListener("click", () => {
+  expandCard("play-section");
+  document.getElementById("play-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+wireTaxonomyBrowser(document.querySelector<HTMLElement>("#pk-taxonomy-root")!, (_code, themes, nodeName) => {
+  practiceLichessThemes(themes, nodeName);
+});
+
+// --- Shareable/bookmarkable state in the URL hash (critique #10) ---
+// `#u=<name>` seeds the username (so a link works in a fresh browser, not
+// just one that already has it in localStorage); `#open=<card-id>`
+// expands and scrolls to a specific card. The hash is kept current as the
+// viewer opens cards and syncs, via replaceState (no history spam).
+function readHashState(): { u?: string; open?: string } {
+  const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+  return { u: h.get("u") || undefined, open: h.get("open") || undefined };
+}
+function writeHashState(patch: { u?: string; open?: string }) {
+  const cur = readHashState();
+  const next = { ...cur, ...patch };
+  const h = new URLSearchParams();
+  if (next.u) h.set("u", next.u);
+  if (next.open) h.set("open", next.open);
+  const s = h.toString();
+  history.replaceState(null, "", s ? `#${s}` : location.pathname + location.search);
+}
+const initialHash = readHashState();
+if (initialHash.open) {
+  const target = document.getElementById(initialHash.open);
+  if (target) {
+    expandCard(initialHash.open);
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+}
+// Track which card the viewer last opened, so a bookmark reopens it.
+document.querySelectorAll<HTMLElement>("section.card[id] > h2.card-heading-collapsible").forEach((h2) => {
+  h2.addEventListener("click", () => {
+    const card = h2.closest("section.card")!;
+    // click toggles AFTER this handler in collapsibleCards' own listener,
+    // so read the state that's about to result: currently-visible -> will close.
+    const body = card.querySelector<HTMLElement>(".card-body");
+    const willOpen = body ? body.style.display === "none" : true;
+    writeHashState({ open: willOpen ? card.id : undefined });
+  });
+});
 
 function setStatus(el: HTMLElement, text: string, kind: "ok" | "error" | "" = "") {
   el.textContent = text;
@@ -437,8 +667,26 @@ botEloInput.addEventListener("input", () => {
 botSoundCheckbox.checked = isSoundEnabled();
 botSoundCheckbox.addEventListener("change", () => setSoundEnabled(botSoundCheckbox.checked));
 
+const fxCheckbox = document.querySelector<HTMLInputElement>("#fx-enabled")!;
+fxCheckbox.checked = effectsEnabled();
+fxCheckbox.addEventListener("change", () => {
+  setEffectsEnabled(fxCheckbox.checked);
+  if (fxCheckbox.checked) confetti(fxCheckbox, 0.6); // little acknowledgement
+});
+
 boardThemeSelect.value = loadSavedBoardTheme();
 boardThemeSelect.addEventListener("change", () => applyBoardTheme(boardThemeSelect.value));
+
+const pieceSetSelect = document.querySelector<HTMLSelectElement>("#piece-set")!;
+pieceSetSelect.value = getPieceSet();
+pieceSetSelect.addEventListener("change", () => {
+  setPieceSet(pieceSetSelect.value as ReturnType<typeof getPieceSet>);
+  // Re-render every board in place so the new set shows without losing
+  // any game/puzzle state.
+  for (const b of [playBoard, puzzleBoard, lcBoard, redemptionBoard, visionBoard]) b?.redraw();
+  if (lastOpeningFrequency) renderOpeningSection();
+  if (lastDepthFrequency) renderDepthSection();
+});
 
 // --- Hang-detection sensitivity (shared by the live bot-game warning and
 // the standalone Vision Trainer -- one setting, not two, since both call
@@ -609,6 +857,14 @@ async function maybePlayBotMove(board: PlayBoard) {
       gameReportedThisGame = true;
       clearSavedBotGame();
       playGameEndSound(status.result === "checkmate" && status.winner === humanColor);
+      const outcome: "win" | "loss" | "draw" =
+        status.result === "checkmate" ? (status.winner === humanColor ? "win" : "loss") : "draw";
+      recordBotResult(lcUser(), parseInt(botEloInput.value, 10), outcome);
+      if (outcome === "win") {
+        celebrate(document.getElementById("play-board-wrap"));
+        playFanfareSound();
+      }
+      refreshAchievements();
       void runPostGameReport(board);
     }
     return;
@@ -842,6 +1098,7 @@ async function runSync(username: string) {
     } catch {
       // best-effort only -- private browsing / blocked storage just means no auto-fill next time
     }
+    writeHashState({ u: username }); // make the current view linkable/bookmarkable
 
     if (isFirstEverSync) {
       const result = await quickSyncRecentGames(db, client, username, QUICK_SYNC_GAME_TARGET, onProgress);
@@ -926,11 +1183,13 @@ fullSyncBtn.addEventListener("click", async () => {
 // already analyzed in a previous session show up immediately from
 // IndexedDB while the (usually fast, current-month-only) re-sync runs.
 (async () => {
-  let saved: string | null = null;
-  try {
-    saved = localStorage.getItem(LAST_USERNAME_KEY);
-  } catch {
-    // ignore -- storage may be blocked
+  let saved: string | null = initialHash.u ?? null;
+  if (!saved) {
+    try {
+      saved = localStorage.getItem(LAST_USERNAME_KEY);
+    } catch {
+      // ignore -- storage may be blocked
+    }
   }
   if (saved) {
     usernameInput.value = saved;
@@ -1127,16 +1386,23 @@ async function computeProfileForUsername(username: string) {
 
     const estimates: number[] = [];
     let latestCvR2: number | undefined;
+    let latestCvMae: number | undefined;
     for (const game of analyzedGames) {
       const ownGameMoves = ownMoves.filter((m) => m.gameId === game.chessComUuid);
       const estimate = estimateStrength(game, ownGameMoves);
       if (estimate) {
         estimates.push(estimate.estimatedRating);
         latestCvR2 = estimate.cvR2; // same frozen model for every game, so any one value works
+        latestCvMae = estimate.cvMae;
       }
     }
     const strength = estimates.length
-      ? { avgEstimate: estimates.reduce((a, b) => a + b, 0) / estimates.length, sampleSize: estimates.length, cvR2: latestCvR2 }
+      ? {
+          avgEstimate: estimates.reduce((a, b) => a + b, 0) / estimates.length,
+          sampleSize: estimates.length,
+          cvR2: latestCvR2,
+          cvMae: latestCvMae,
+        }
       : undefined;
 
     return { profile, strength, openingFrequency, depthFrequency, analyzedGames, ownMoves, allGames };
@@ -1249,6 +1515,13 @@ document.addEventListener("keydown", (e) => {
 const focusSection = document.querySelector<HTMLElement>("#focus-section")!;
 const focusOutput = document.querySelector<HTMLDivElement>("#focus-output")!;
 
+// Shared state for the spine features (Today / Redemption / Achievements),
+// populated by refreshProfile once per data load.
+let lastAssessment: ReturnType<typeof assessSkills> | null = null;
+let lastGamesAnalyzed = 0;
+let lastGamesSynced = 0;
+let redemptionRows: RedemptionRow[] = [];
+
 // One listener on the whole output, not one per render -- focus-output's
 // innerHTML gets replaced wholesale every refreshProfile call, which would
 // silently drop a directly-attached listener each time.
@@ -1311,30 +1584,59 @@ async function refreshProfile() {
   const castling = computeCastlingBreakdown(allGames);
   const firstMistakePly = computeFirstMistakePly(analyzedGames, ownMoves);
   const patternsHtml = renderGamePatterns(endings, trajectories, opponentStrength, gameLength, timeOfDay, castling, firstMistakePly);
-  patternsSection.style.display = patternsHtml ? "" : "none";
-  patternsOutput.innerHTML = patternsHtml;
+  if (patternsHtml) {
+    clearEmptyFor("patterns-section");
+    patternsSection.style.display = "";
+    patternsOutput.innerHTML = patternsHtml;
+  } else {
+    emptyFor("patterns-section");
+  }
 
   // Rivals, like game patterns, only need synced games -- no engine
   // analysis required, so this shows up right after sync too.
   const rivalRecords = computeRivalRecords(allGames);
   const rivalInsights = computeRivalInsights(rivalRecords);
-  rivalsSection.style.display = allGames.length ? "" : "none";
-  rivalsOutput.innerHTML = renderRivalTracking(rivalRecords, rivalInsights);
+  if (allGames.length) {
+    clearEmptyFor("rivals-section");
+    rivalsSection.style.display = "";
+    rivalsOutput.innerHTML = renderRivalTracking(rivalRecords, rivalInsights);
+  } else {
+    emptyFor("rivals-section");
+  }
+
+  lastGamesSynced = allGames.length;
+  // One-time puzzle-rating seed from the visitor's most recent rated game.
+  if (currentUsername) {
+    const recentRated = [...allGames].filter((g) => g.rated).sort((a, b) => b.endTime - a.endTime)[0];
+    if (recentRated) {
+      seedRating(currentUsername, recentRated.userColor === "white" ? recentRated.whiteRating : recentRated.blackRating);
+    }
+  }
 
   if (profile.gamesAnalyzed === 0) {
-    profileSection.style.display = "none";
-    insightsSection.style.display = "none";
-    openingSection.style.display = "none";
-    depthSection.style.display = "none";
-    puzzleSection.style.display = "none";
-    visionSection.style.display = "none";
-    focusSection.style.display = "none";
+    // No analyzed games yet -- show each card in its designed waiting
+    // state (redesign #5) instead of hiding it outright.
+    emptyFor("profile-section");
+    emptyFor("insights-section");
+    emptyFor("opening-section");
+    emptyFor("depth-section");
+    emptyFor("puzzle-section");
+    emptyFor("vision-section");
+    emptyFor("focus-section");
+    lastGamesAnalyzed = 0;
+    redemptionRows = [];
+    renderRedemptionSection();
+    updateLichessRatingReadout();
+    renderTodaySection();
+    refreshAchievements();
     return;
   }
+  clearEmptyFor("profile-section");
   profileSection.style.display = "";
   profileOutput.innerHTML = renderProfile(profile, strength);
 
   const assessment = assessSkills(ownMoves);
+  lastAssessment = assessment;
   const scoreMap: Record<string, number | undefined> = {};
   for (const s of assessment.scores) scoreMap[s.category] = s.score;
   await saveSkillSnapshot(currentUsername, scoreMap, assessment.weakest?.category, profile.gamesAnalyzed);
@@ -1345,38 +1647,64 @@ async function refreshProfile() {
   } finally {
     snapshotDb.close();
   }
+  clearEmptyFor("focus-section");
   focusSection.style.display = "";
   focusOutput.innerHTML = renderSkillProfile(assessment, snapshots);
 
+  clearEmptyFor("insights-section");
   renderInsights(profile, analyzedGames, ownMoves);
 
   lastOpeningFrequency = openingFrequency;
   if (openingFrequency.white.length > 0 || openingFrequency.black.length > 0) {
+    clearEmptyFor("opening-section");
     openingSection.style.display = "";
     renderOpeningSection();
   } else {
-    openingSection.style.display = "none";
+    emptyFor("opening-section");
   }
 
   lastDepthFrequency = depthFrequency;
   if (depthFrequency.length > 0) {
+    clearEmptyFor("depth-section");
     depthSection.style.display = "";
     renderDepthSection();
   } else {
-    depthSection.style.display = "none";
+    emptyFor("depth-section");
   }
 
   currentPuzzles = extractPuzzles(analyzedGames, ownMoves);
   if (currentPuzzles.length > 0) {
+    clearEmptyFor("puzzle-section");
     puzzleSection.style.display = "";
     updatePuzzleStreakDisplay();
   } else {
-    puzzleSection.style.display = "none";
+    emptyFor("puzzle-section");
   }
 
   visionPositions = Array.from(new Set(ownMoves.map((m) => m.fenBefore)));
-  visionSection.style.display = visionPositions.length > 0 ? "" : "none";
-  if (visionPositions.length > 0 && !visionCurrentFen) loadVisionPosition();
+  if (visionPositions.length > 0) {
+    clearEmptyFor("vision-section");
+    visionSection.style.display = "";
+    if (!visionCurrentFen) loadVisionPosition();
+  } else {
+    emptyFor("vision-section");
+  }
+
+  // --- Spine features (Today / Redemption / Achievements) ---
+  lastGamesAnalyzed = profile.gamesAnalyzed;
+  const gameById = new Map(analyzedGames.map((g) => [g.chessComUuid, g]));
+  redemptionRows = [...currentPuzzles]
+    .sort((a, b) => b.centipawnLoss - a.centipawnLoss)
+    .map((p) => {
+      const g = gameById.get(p.gameId);
+      const opp = g ? (g.userColor === "white" ? g.blackRating : g.whiteRating) : 0;
+      return { puzzle: p, opponentRating: opp || 1200, redeemed: isRedeemed(lcUser(), p.id) };
+    });
+  renderRedemptionSection();
+  updateLichessRatingReadout();
+  maybeUpgradeToday();
+  renderTodaySection();
+  refreshAchievements();
 }
 
 // --- Insights (quick-win stats derived from data already computed) ---
@@ -1481,9 +1809,33 @@ function pickPuzzle(): Puzzle | null {
   }
   if (pool.length === 0) return null;
 
-  const unsolved = currentUsername ? pool.filter((p) => !isSolved(currentUsername!, p.id)) : pool;
-  const candidates = unsolved.length > 0 ? unsolved : pool; // once everything's solved, just recycle
+  // Prefer puzzles that are "due" -- never seen, or past their spaced-
+  // repetition interval (critique #2). Only once nothing is due do we
+  // recycle the whole pool, so a fluked-once pattern still comes back.
+  const due = currentUsername ? pool.filter((p) => isDue(currentUsername!, p.id)) : pool;
+  const candidates = due.length > 0 ? due : pool;
   return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+/** Turns the blunder tag already computed for this move in Phase 2 into a
+ * plain sentence naming the idea, so the puzzle feedback teaches "why"
+ * instead of just stating the engine's move (critique #9). No engine call
+ * -- the tag is deterministic and already on the puzzle. */
+function puzzleWhy(p: Puzzle): string {
+  switch (p.blunderTag) {
+    case "missed_mate":
+      return ` There was a forced mate here — ${p.bestMoveSan} starts it.`;
+    case "allowed_mate":
+      return ` ${p.playedSan} walked into a forced mate; ${p.bestMoveSan} avoids it.`;
+    case "hung_material":
+      return ` ${p.playedSan} left a piece hanging — ${p.bestMoveSan} keeps your material defended.`;
+    case "missed_capture":
+      return ` ${p.bestMoveSan} wins material with a capture you passed up.`;
+    case "positional":
+      return ` No tactic — ${p.bestMoveSan} is just a clearly stronger move for the position.`;
+    default:
+      return "";
+  }
 }
 
 function loadPuzzle() {
@@ -1504,10 +1856,22 @@ function loadPuzzle() {
       setStatus(
         puzzleProgressEl,
         correct
-          ? `✅ Correct — ${activePuzzle.bestMoveSan} was the move.`
-          : `❌ Not quite. You played ${activePuzzle.playedSan}; the engine's move was ${activePuzzle.bestMoveSan}.`,
+          ? `✅ Correct — ${activePuzzle.bestMoveSan} was the move.${puzzleWhy(activePuzzle)}`
+          : `❌ Not quite. You played ${activePuzzle.playedSan}; the engine's move was ${activePuzzle.bestMoveSan}.${puzzleWhy(activePuzzle)}`,
         correct ? "ok" : "error",
       );
+      if (correct) {
+        flash(puzzleBoardWrap, "good");
+        playSuccessSound();
+        confetti(puzzleBoardWrap, 0.8);
+        bumpToday(lcUser(), "review");
+        renderTodaySection();
+      } else {
+        shake(puzzleBoardWrap);
+        flash(puzzleBoardWrap, "bad");
+        playFailSound();
+      }
+      refreshAchievements();
     });
   }
   puzzleBoard.reset(puzzle.sideToMove, puzzle.fenBefore);
@@ -1522,6 +1886,556 @@ puzzleNextBtn.addEventListener("click", loadPuzzle);
 puzzleDifficultySelect.addEventListener("change", () => {
   if (currentPuzzles.length > 0) loadPuzzle();
 });
+
+// --- Themed puzzles (bundled Lichess CC0 library) ---
+
+const lichessThemeSelect = document.querySelector<HTMLSelectElement>("#lichess-theme")!;
+const lichessRatingSelect = document.querySelector<HTMLSelectElement>("#lichess-rating")!;
+const lichessNextBtn = document.querySelector<HTMLButtonElement>("#lichess-next-btn")!;
+const lichessStreakEl = document.querySelector<HTMLSpanElement>("#lichess-streak")!;
+const lichessStatus = document.querySelector<HTMLParagraphElement>("#lichess-status")!;
+const lichessProgressEl = document.querySelector<HTMLParagraphElement>("#lichess-progress")!;
+const lichessFocusIndicator = document.querySelector<HTMLParagraphElement>("#lichess-focus-indicator")!;
+const lichessRatingReadout = document.querySelector<HTMLParagraphElement>("#lichess-rating-readout")!;
+const lcBoardWrapEl = document.querySelector<HTMLElement>("#lichess-board-wrap")!;
+const lichessLoadBar = createProgressBar(document.querySelector<HTMLElement>("#lichess-load-progress")!);
+let lcCombo = 0; // consecutive themed-puzzle solves, for escalating juice
+
+// Populate the theme picker, grouped.
+{
+  const groups = new Map<string, HTMLOptGroupElement>();
+  for (const t of THEME_OPTIONS) {
+    let g = groups.get(t.group);
+    if (!g) {
+      g = document.createElement("optgroup");
+      g.label = t.group;
+      groups.set(t.group, g);
+      lichessThemeSelect.appendChild(g);
+    }
+    const opt = document.createElement("option");
+    opt.value = t.id;
+    opt.textContent = t.label;
+    g.appendChild(opt);
+  }
+}
+
+let lcPuzzle: CuratedPuzzleRecord | null = null;
+let lcBoard: PlayBoard | null = null;
+let lcSolIdx = 1;
+let lcDone = false;
+let lcFocusThemes: string[] | null = null; // set by "practice this" from PK taxonomy / focus
+const lcSeen = new Set<string>(); // session-level no-immediate-repeat
+
+function lcUser(): string {
+  return currentUsername || "guest";
+}
+
+function updateLichessStreakDisplay() {
+  const s = getStreak(lcUser());
+  lichessStreakEl.textContent = `🔥 ${s.currentStreak}-day streak (best ${s.bestStreak})`;
+}
+
+function parseRatingBand(): [number, number] {
+  if (lichessRatingSelect.value === "match") {
+    const r = getRating(lcUser()).rating;
+    return [r - 120, r + 120];
+  }
+  const [lo, hi] = lichessRatingSelect.value.split("-").map(Number);
+  return [lo, hi];
+}
+
+function updateLichessRatingReadout(animateFrom?: number) {
+  const st = getRating(lcUser());
+  const spark = ratingSparkline(st.history);
+  lichessRatingReadout.innerHTML =
+    st.solved === 0
+      ? `Puzzle rating: <strong id="lichess-rating-num">${st.rating}</strong> (unrated — solve a few to calibrate)`
+      : `Puzzle rating: <strong id="lichess-rating-num">${st.rating}</strong> &nbsp;${spark} &nbsp;<span class="status-line">${st.solved} solved</span>`;
+  const numEl = document.getElementById("lichess-rating-num");
+  if (animateFrom !== undefined && numEl) {
+    countUp(numEl, animateFrom, st.rating);
+    bump(numEl);
+  }
+}
+
+function updateLichessFocusIndicator() {
+  if (!lcFocusThemes) {
+    lichessFocusIndicator.style.display = "none";
+    return;
+  }
+  lichessFocusIndicator.style.display = "";
+  lichessFocusIndicator.textContent = `Focused on: ${describeThemes(lcFocusThemes.join(" ")) || lcFocusThemes.join(", ")} — `;
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "Clear focus";
+  clear.style.marginLeft = "8px";
+  clear.addEventListener("click", () => {
+    lcFocusThemes = null;
+    updateLichessFocusIndicator();
+  });
+  lichessFocusIndicator.appendChild(clear);
+}
+
+/** SAN for a UCI move applied to fen + the moves already played, for the
+ * "the move was ..." feedback. Best-effort — returns the raw UCI on any
+ * parse failure rather than throwing. */
+function sanForLine(fen: string, uciMoves: string[], nextUci: string): string {
+  try {
+    const c = new Chess(fen);
+    for (const u of uciMoves) c.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u.slice(4) || undefined });
+    const m = c.move({ from: nextUci.slice(0, 2), to: nextUci.slice(2, 4), promotion: nextUci.slice(4) || undefined });
+    return m?.san ?? nextUci;
+  } catch {
+    return nextUci;
+  }
+}
+
+async function loadLichessPuzzle() {
+  lichessNextBtn.disabled = true;
+  setStatus(lichessStatus, "Loading…");
+  setStatus(lichessProgressEl, "");
+  let db: IDBDatabase;
+  try {
+    db = await openDb();
+  } catch (err: any) {
+    setStatus(lichessStatus, `Couldn't open local storage: ${err.message ?? err}`, "error");
+    lichessNextBtn.disabled = false;
+    return;
+  }
+  try {
+    await ensureCuratedPuzzlesLoaded(db, (frac, note) => lichessLoadBar.update(Math.round(frac * 100), 100, note));
+    lichessLoadBar.hide();
+
+    const [lo, hi] = parseRatingBand();
+    const themes = lcFocusThemes ?? [lichessThemeSelect.value];
+    const p = await pickCuratedPuzzle(db, { themes, ratingMin: lo, ratingMax: hi, excludeIds: lcSeen });
+    if (!p) {
+      setStatus(lichessStatus, "No puzzles match that theme and difficulty — try a wider band.", "error");
+      return;
+    }
+    lcSeen.add(p.id);
+    if (lcSeen.size > 500) lcSeen.clear(); // bounded
+
+    lcPuzzle = p;
+    lcSolIdx = 1;
+    lcDone = false;
+    const moves = p.moves.split(" ");
+
+    // Solver is whoever is to move AFTER the puzzle's setup move (moves[0]).
+    const scratch = new Chess(p.fen);
+    scratch.move({ from: moves[0].slice(0, 2), to: moves[0].slice(2, 4), promotion: moves[0].slice(4) || undefined });
+    const solverColor: "white" | "black" = scratch.turn() === "w" ? "white" : "black";
+
+    if (!lcBoard) {
+      lcBoard = new PlayBoard(document.querySelector<HTMLDivElement>("#lichess-board-wrap")!, (uci) => onLichessMove(uci));
+    }
+    lcBoard.reset(solverColor, p.fen);
+    lcBoard.applyMove(moves[0]);
+    lcBoard.setLocked(false);
+
+    setStatus(
+      lichessStatus,
+      `Rated ${p.rating}${describeThemes(p.themes) ? ` — ${describeThemes(p.themes)}` : ""}. ${solverColor[0].toUpperCase() + solverColor.slice(1)} to move.`,
+    );
+    setStatus(lichessProgressEl, moves.length > 3 ? "Find the whole line." : "Find the move.");
+  } catch (err: any) {
+    lichessLoadBar.hide();
+    setStatus(lichessStatus, `Puzzle load failed: ${err.message ?? err}`, "error");
+  } finally {
+    db.close();
+    lichessNextBtn.disabled = false;
+  }
+}
+
+function onLichessMove(uci: string) {
+  if (!lcPuzzle || lcDone || !lcBoard) return;
+  const moves = lcPuzzle.moves.split(" ");
+  const expected = moves[lcSolIdx];
+
+  if (uci !== expected) {
+    lcDone = true;
+    lcBoard.setLocked(true);
+    recordAttempt(lcUser(), `lichess:${lcPuzzle.id}`, false);
+    const before = getRating(lcUser()).rating;
+    const st = applyResult(lcUser(), lcPuzzle.rating, false);
+    lcCombo = 0;
+    updateLichessStreakDisplay();
+    updateLichessRatingReadout(before);
+    shake(lcBoardWrapEl);
+    flash(lcBoardWrapEl, "bad");
+    playFailSound();
+    floatText(lichessRatingReadout, `${st.rating - before}`, "bad");
+    const wantSan = sanForLine(lcPuzzle.fen, moves.slice(0, lcSolIdx), expected);
+    setStatus(lichessProgressEl, `❌ ${wantSan} was the move. Puzzle rating ${st.rating}.${describeThemes(lcPuzzle.themes) ? ` (${describeThemes(lcPuzzle.themes)})` : ""}`, "error");
+    onThemedPuzzleResolved(false);
+    return;
+  }
+
+  lcSolIdx += 1;
+  if (lcSolIdx >= moves.length) {
+    lcDone = true;
+    lcBoard.setLocked(true);
+    recordAttempt(lcUser(), `lichess:${lcPuzzle.id}`, true);
+    const before = getRating(lcUser()).rating;
+    const st = applyResult(lcUser(), lcPuzzle.rating, true);
+    lcCombo += 1;
+    updateLichessStreakDisplay();
+    updateLichessRatingReadout(before);
+    flash(lcBoardWrapEl, "good");
+    playSuccessSound();
+    const delta = st.rating - before;
+    floatText(lichessRatingReadout, delta >= 0 ? `+${delta}` : `${delta}`, "good");
+    const comboPower = lcCombo >= 10 ? 2 : lcCombo >= 5 ? 1.5 : lcCombo >= 3 ? 1.1 : 0.8;
+    confetti(lcBoardWrapEl, comboPower);
+    if (lcCombo === 3 || lcCombo === 5 || lcCombo === 10) {
+      floatText(lcBoardWrapEl, `${lcCombo} in a row!`, "gold");
+    }
+    setStatus(lichessProgressEl, `✅ Solved! Puzzle rating ${st.rating}.${lcCombo >= 2 ? ` 🔥 ${lcCombo} in a row.` : ""}${describeThemes(lcPuzzle.themes) ? ` (${describeThemes(lcPuzzle.themes)})` : ""}`, "ok");
+    onThemedPuzzleResolved(true);
+    return;
+  }
+
+  // Opponent's reply, then it's the solver's move again.
+  lcBoard.applyMove(moves[lcSolIdx]);
+  lcSolIdx += 1;
+  lcBoard.setLocked(false);
+  setStatus(lichessProgressEl, "✓ Keep going…", "ok");
+}
+
+/** Entry point for "practice this" buttons elsewhere (PK taxonomy nodes):
+ * sets the theme focus, reveals the card, and loads a first puzzle. */
+function practiceLichessThemes(themes: string[], label: string) {
+  lcFocusThemes = themes;
+  updateLichessFocusIndicator();
+  expandCard("lichess-puzzle-section");
+  document.getElementById("lichess-puzzle-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  setStatus(lichessStatus, `Practicing: ${label}`);
+  void loadLichessPuzzle();
+}
+
+lichessNextBtn.addEventListener("click", () => void loadLichessPuzzle());
+lichessThemeSelect.addEventListener("change", () => {
+  lcFocusThemes = null;
+  updateLichessFocusIndicator();
+});
+lichessRatingSelect.addEventListener("change", () => updateLichessRatingReadout());
+updateLichessStreakDisplay();
+updateLichessRatingReadout();
+
+// --- Redemption list (replay a past loss) ---
+
+const redemptionSection = document.querySelector<HTMLElement>("#redemption-section")!;
+const redemptionOutput = document.querySelector<HTMLDivElement>("#redemption-output")!;
+const redemptionStatus = document.querySelector<HTMLParagraphElement>("#redemption-status")!;
+const redemptionProgressEl = document.querySelector<HTMLParagraphElement>("#redemption-progress")!;
+
+let redemptionBoard: PlayBoard | null = null;
+let activeRedemption: RedemptionRow | null = null;
+let redemptionFirstMoveDone = false;
+
+function renderRedemptionSection() {
+  if (!redemptionRows.length) {
+    emptyFor("redemption-section");
+    return;
+  }
+  clearEmptyFor("redemption-section");
+  redemptionSection.style.display = "";
+  redemptionOutput.innerHTML = renderRedemptionList(redemptionRows, activeRedemption?.puzzle.id ?? null);
+}
+
+function loadRedemption(row: RedemptionRow) {
+  activeRedemption = row;
+  redemptionFirstMoveDone = false;
+  const p = row.puzzle;
+  if (!redemptionBoard) {
+    redemptionBoard = new PlayBoard(document.querySelector<HTMLDivElement>("#redemption-board-wrap")!, (uci) => onRedemptionMove(uci));
+  }
+  redemptionBoard.reset(p.sideToMove, p.fenBefore);
+  redemptionBoard.setLocked(false);
+  setStatus(redemptionStatus, `Your game vs ~${row.opponentRating}. You played ${p.playedSan} and lost ${p.centipawnLoss}cp. Find the engine's move for ${p.sideToMove}.`);
+  setStatus(redemptionProgressEl, "");
+  renderRedemptionSection();
+}
+
+async function onRedemptionMove(uci: string) {
+  if (!activeRedemption || !redemptionBoard) return;
+  const p = activeRedemption.puzzle;
+
+  const redemptionWrapEl = document.querySelector<HTMLElement>("#redemption-board-wrap");
+
+  if (!redemptionFirstMoveDone) {
+    if (uci !== p.bestMoveUci) {
+      redemptionBoard.setLocked(true);
+      shake(redemptionWrapEl);
+      flash(redemptionWrapEl, "bad");
+      playFailSound();
+      setStatus(redemptionProgressEl, `❌ Not the move — the engine played ${p.bestMoveSan}. Load it again to retry.`, "error");
+      return;
+    }
+    redemptionFirstMoveDone = true;
+    const wasNew = !activeRedemption.redeemed;
+    if (wasNew) {
+      markRedeemed(lcUser(), p.id);
+      activeRedemption.redeemed = true;
+      bumpToday(lcUser(), "redemption");
+      renderTodaySection();
+      refreshAchievements();
+    }
+    if (wasNew) {
+      celebrate(redemptionWrapEl);
+      playLevelUpSound();
+      floatText(redemptionWrapEl, "Redeemed!", "gold");
+    } else {
+      flash(redemptionWrapEl, "good");
+      playSuccessSound();
+    }
+    setStatus(redemptionProgressEl, `✅ Redeemed — ${p.bestMoveSan}. Now play it out against the bot.`, "ok");
+    renderRedemptionSection();
+    await maybePlayRedemptionBot();
+    return;
+  }
+  await maybePlayRedemptionBot();
+}
+
+async function maybePlayRedemptionBot() {
+  if (!activeRedemption || !redemptionBoard) return;
+  const status = redemptionBoard.getStatus();
+  if (status.over) {
+    redemptionBoard.setLocked(true);
+    setStatus(redemptionProgressEl, "Game over — load another loss to redeem.", "ok");
+    return;
+  }
+  const solverColor = activeRedemption.puzzle.sideToMove;
+  const isSolverTurn = redemptionBoard.getFen().split(" ")[1] === (solverColor === "white" ? "w" : "b");
+  if (isSolverTurn) {
+    redemptionBoard.setLocked(false);
+    return;
+  }
+  redemptionBoard.setLocked(true);
+  try {
+    if (!botEngine) {
+      botEngine = new Engine();
+      await botEngine.init();
+    }
+    const mv = await chooseBotMove(botEngine, redemptionBoard.getFen(), activeRedemption.opponentRating);
+    redemptionBoard.applyMove(mv.uci);
+  } catch {
+    // if the bot fails, just hand the move back to the player
+  }
+  redemptionBoard.setLocked(false);
+  const s2 = redemptionBoard.getStatus();
+  if (s2.over) {
+    redemptionBoard.setLocked(true);
+    setStatus(redemptionProgressEl, "Game over — load another loss to redeem.", "ok");
+  }
+}
+
+redemptionOutput.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".redeem-btn[data-redeem-id]");
+  if (!btn) return;
+  const row = redemptionRows.find((r) => r.puzzle.id === btn.dataset.redeemId);
+  if (row) loadRedemption(row);
+});
+
+// --- Achievements ---
+
+const achievementsOutput = document.querySelector<HTMLDivElement>("#achievements-output")!;
+
+function gatherAchievementStats(): AchievementStats {
+  const user = lcUser();
+  const blunderSolved = Object.values(getProgress(user)).filter((p) => p.solved).length;
+  return {
+    puzzlesSolved: blunderSolved,
+    themedSolved: getRating(user).solved,
+    puzzleRating: getRating(user).rating,
+    puzzleBestStreak: getStreak(user).bestStreak,
+    redeemed: redeemedCount(user),
+    gamesAnalyzed: lastGamesAnalyzed,
+    gamesSynced: lastGamesSynced,
+    todayStreakBest: getTodayStreak(user).best,
+    botBestWinElo: bestWinElo(user),
+  };
+}
+
+function renderAchievementsSection() {
+  const unlocked = getUnlocked(lcUser());
+  const grid = ACHIEVEMENTS.map((a) => {
+    const got = unlocked.has(a.id);
+    return `<div class="achv${got ? " achv-got" : ""}" title="${a.description}">
+      <span class="achv-name">${got ? "🏅 " : "🔒 "}${a.label}</span>
+      <span class="achv-desc">${a.description}</span>
+    </div>`;
+  }).join("");
+  achievementsOutput.innerHTML = `
+    <p class="status-line">${unlocked.size}/${ACHIEVEMENTS.length} unlocked</p>
+    <div class="achv-grid">${grid}</div>`;
+}
+
+function refreshAchievements() {
+  const fresh = checkAchievements(lcUser(), gatherAchievementStats());
+  // Cap the banner run so a first-time rollout (which can unlock a dozen
+  // at once from existing history) doesn't bury the screen -- show the
+  // first few, then a single summary line.
+  const SHOWN = 4;
+  fresh.slice(0, SHOWN).forEach((id, i) => {
+    const a = ACHIEVEMENTS.find((x) => x.id === id);
+    if (a) window.setTimeout(() => achievementBanner(a.label, a.description), i * 350);
+  });
+  if (fresh.length > SHOWN) {
+    window.setTimeout(() => achievementBanner(`+${fresh.length - SHOWN} more unlocked`, "See the Achievements card"), SHOWN * 350);
+  }
+  if (fresh.length) {
+    confetti(null, 1.3);
+    playLevelUpSound();
+  }
+  renderAchievementsSection();
+}
+
+let toastTimer: number | undefined;
+function showToast(text: string) {
+  let el = document.getElementById("chegga-toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "chegga-toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add("toast-visible");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => el!.classList.remove("toast-visible"), 4000);
+}
+
+// --- Today ---
+
+const todayOutput = document.querySelector<HTMLDivElement>("#today-output")!;
+
+/** Maps the skill assessment's weakest category to Lichess puzzle themes
+ * for Today's focus, reusing the PK map where a specific node fits. */
+function focusThemesFromAssessment(): string[] {
+  const a = lastAssessment;
+  if (!a || !a.weakest) return [];
+  const cat = a.weakest.category;
+  const action = a.prescription?.action;
+  if (action && action.kind === "puzzle" && action.blunderTag) {
+    const map: Record<string, string[]> = {
+      hung_material: ["hangingPiece"],
+      missed_capture: ["capturingDefender", "hangingPiece"],
+      missed_mate: ["mate", "mateIn2"],
+      allowed_mate: ["defensiveMove"],
+      positional: ["quietMove"],
+    };
+    if (map[action.blunderTag]) return map[action.blunderTag];
+  }
+  if (cat === "endgame") return ["endgame", "rookEndgame", "pawnEndgame"];
+  if (cat === "opening") return ["opening"];
+  if (cat === "timeManagement") return ["fork", "hangingPiece"];
+  return ["fork", "pin", "discoveredAttack"]; // middlegame default
+}
+
+function dueReviewCount(): number {
+  return currentPuzzles.filter((p) => isDue(lcUser(), p.id)).length;
+}
+
+function ensureTodayForUser() {
+  const user = lcUser();
+  let state = getToday(user);
+  if (!state) {
+    const r = getRating(user).rating;
+    state = buildToday({
+      focusThemes: focusThemesFromAssessment(),
+      ratingMin: r - 120,
+      ratingMax: r + 120,
+      hasAnalyzedGames: lastGamesAnalyzed > 0,
+      dueReviewCount: dueReviewCount(),
+      unredeemedCount: redemptionRows.filter((row) => !row.redeemed).length,
+    });
+    saveToday(user, state);
+  }
+  return state;
+}
+
+/** If today's set was built before any analysis data was available (only
+ * a themed item) but games have since been analyzed, rebuild it with the
+ * review/redemption items — preserving the themed progress so far. */
+function maybeUpgradeToday() {
+  const user = lcUser();
+  const state = getToday(user);
+  if (!state) return;
+  const hasNonThemed = state.items.some((i) => i.kind !== "themed");
+  if (hasNonThemed || lastGamesAnalyzed === 0) return;
+  const themedDone = state.items.find((i) => i.kind === "themed")?.done ?? 0;
+  const r = getRating(user).rating;
+  const fresh = buildToday({
+    focusThemes: focusThemesFromAssessment(),
+    ratingMin: r - 120,
+    ratingMax: r + 120,
+    hasAnalyzedGames: true,
+    dueReviewCount: dueReviewCount(),
+    unredeemedCount: redemptionRows.filter((row) => !row.redeemed).length,
+  });
+  const t = fresh.items.find((i) => i.kind === "themed");
+  if (t) t.done = Math.min(themedDone, t.target);
+  saveToday(user, fresh);
+}
+
+function renderTodaySection() {
+  const user = lcUser();
+  const state = ensureTodayForUser();
+  if (isTodayComplete(state) && !state.streakCounted) {
+    state.streakCounted = true;
+    saveToday(user, state);
+    const streak = recordTodayComplete(user);
+    refreshAchievements();
+    celebrate(document.getElementById("today-section"));
+    playFanfareSound();
+    showToast(`Today complete — 🔥 ${streak.current}-day streak`);
+  }
+  todayOutput.innerHTML = renderToday(state, getTodayStreak(user));
+}
+
+function onThemedPuzzleResolved(solved: boolean) {
+  if (solved) {
+    bumpToday(lcUser(), "themed");
+    renderTodaySection();
+  }
+  refreshAchievements();
+}
+
+// "Start" buttons inside Today: configure + scroll to the right card.
+todayOutput.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  if (target.id === "today-keep-going") {
+    document.getElementById("lichess-puzzle-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  const btn = target.closest<HTMLButtonElement>(".today-start-btn[data-today-kind]");
+  if (!btn) return;
+  const kind = btn.dataset.todayKind as TodayKind;
+  const state = getToday(lcUser());
+  const item = state?.items.find((i) => i.kind === kind);
+
+  if (kind === "themed") {
+    if (item?.themes) {
+      lcFocusThemes = item.themes;
+      updateLichessFocusIndicator();
+    }
+    expandCard("lichess-puzzle-section");
+    document.getElementById("lichess-puzzle-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    void loadLichessPuzzle();
+  } else if (kind === "review") {
+    expandCard("puzzle-section");
+    document.getElementById("puzzle-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    loadPuzzle();
+  } else if (kind === "redemption") {
+    expandCard("redemption-section");
+    document.getElementById("redemption-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const next = redemptionRows.find((r) => !r.redeemed);
+    if (next) loadRedemption(next);
+  }
+});
+
+renderTodaySection();
+renderAchievementsSection();
 
 // --- Vision trainer (is anything hanging?) ---
 

@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&display=swap");
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; }
+  body {
+    background: radial-gradient(1200px 700px at 78% 18%, #1b2230 0%, #0a0c10 60%);
+    color: #edeff3;
+    font-family: "Inter", system-ui, sans-serif;
+    padding: 72px 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+  }
+  .board {
+    position: absolute;
+    right: -60px;
+    top: 50%;
+    transform: translateY(-50%) rotate(8deg);
+    width: 520px;
+    height: 520px;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    border-radius: 18px;
+    overflow: hidden;
+    opacity: 0.22;
+    box-shadow: 0 40px 120px rgba(0,0,0,0.5);
+  }
+  .board div { width: 100%; height: 100%; }
+  .l { background: #f0d9b5; }
+  .d { background: #b58863; }
+  .kicker {
+    font: 600 22px "Inter", sans-serif;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #e3a857;
+  }
+  h1 {
+    font: 700 74px/1.05 "Space Grotesk", sans-serif;
+    max-width: 760px;
+    letter-spacing: -0.02em;
+  }
+  h1 .accent { color: #e3a857; }
+  p.sub {
+    font: 400 27px/1.45 "Inter", sans-serif;
+    color: #a7b0c0;
+    max-width: 680px;
+  }
+  .foot {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font: 500 22px "Inter", sans-serif;
+    color: #8a93a6;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #4ade80; }
+  .url { color: #edeff3; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="board" id="board"></div>
+  <div class="kicker">Chess.com game analyzer &nbsp;·&nbsp; runs in your browser</div>
+  <h1>See the patterns in your chess <span class="accent">a human can't.</span></h1>
+  <p class="sub">Your whole game history analyzed locally — move-quality trends, opening
+  repertoire, blunder patterns, time-pressure leaks, a puzzle trainer from your own
+  mistakes, and a 100–3000&nbsp;Elo bot.</p>
+  <div class="foot">
+    <span class="dot"></span>
+    <span>No account &nbsp;·&nbsp; nothing uploaded &nbsp;·&nbsp; <span class="url">chegga-web.vercel.app</span></span>
+  </div>
+  <script>
+    const b = document.getElementById("board");
+    for (let r = 0; r < 8; r++)
+      for (let c = 0; c < 8; c++) {
+        const s = document.createElement("div");
+        s.className = (r + c) % 2 ? "d" : "l";
+        b.appendChild(s);
+      }
+  </script>
+</body>
+</html>

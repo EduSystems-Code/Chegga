@@ -13,6 +13,22 @@ interface PuzzleProgressEntry {
   solved: boolean;
   attempts: number;
   lastAttemptAt: number;
+  // Leitner-style spaced repetition (critique #2): a solved puzzle isn't
+  // gone forever -- it comes back after an interval that grows each time
+  // you get it right and resets to 1 day when you get it wrong, so a
+  // pattern you fluked once actually gets re-tested. Older entries saved
+  // before this field existed are treated as box 0 / due now.
+  box?: number;
+  nextDueAt?: number;
+}
+
+// Days until a puzzle in each Leitner box comes due again.
+const BOX_INTERVAL_DAYS = [1, 1, 3, 7, 21, 60];
+const DAY_MS = 86_400_000;
+
+function dueDelayForBox(box: number): number {
+  const clamped = Math.max(1, Math.min(box, BOX_INTERVAL_DAYS.length - 1));
+  return BOX_INTERVAL_DAYS[clamped] * DAY_MS;
 }
 
 type ProgressMap = Record<string, PuzzleProgressEntry>;
@@ -65,14 +81,30 @@ export function isSolved(username: string, puzzleId: string): boolean {
  * not "did you get it right just now"). */
 export function recordAttempt(username: string, puzzleId: string, correct: boolean): void {
   const progress = getProgress(username);
-  const existing = progress[puzzleId] ?? { solved: false, attempts: 0, lastAttemptAt: 0 };
+  const existing = progress[puzzleId] ?? { solved: false, attempts: 0, lastAttemptAt: 0, box: 0 };
+  const now = Date.now();
+  // Right answer: advance a box (longer until it's due again). Wrong:
+  // drop back to box 1 (due again in a day).
+  const box = correct ? Math.min((existing.box ?? 0) + 1, BOX_INTERVAL_DAYS.length - 1) : 1;
   progress[puzzleId] = {
     solved: existing.solved || correct,
     attempts: existing.attempts + 1,
-    lastAttemptAt: Date.now(),
+    lastAttemptAt: now,
+    box,
+    nextDueAt: now + dueDelayForBox(box),
   };
   saveJson(PROGRESS_KEY_PREFIX + username, progress);
   if (correct) bumpStreak(username);
+}
+
+/** A puzzle is "due" if it's never been attempted or its spaced-repetition
+ * interval has elapsed -- these are what `pickPuzzle` should prefer, so a
+ * practice session pulls in things actually worth re-testing rather than
+ * only ever showing never-seen puzzles until those run out. */
+export function isDue(username: string, puzzleId: string): boolean {
+  const entry = getProgress(username)[puzzleId];
+  if (!entry || entry.nextDueAt === undefined) return true;
+  return entry.nextDueAt <= Date.now();
 }
 
 export function getStreak(username: string): StreakState {

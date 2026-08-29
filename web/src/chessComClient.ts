@@ -70,7 +70,24 @@ export class ChessComClient {
       // backend client sends) makes the preflight fail outright. Browsers
       // also restrict/override User-Agent on fetch regardless, so there's
       // no real equivalent to Python's requests-level UA string from here.
-      const response = await fetch(url);
+      let response: Response;
+      try {
+        response = await fetch(url);
+      } catch (err) {
+        // A thrown fetch (offline, DNS hiccup, transient CORS/network
+        // blip) used to propagate straight out and abort an entire
+        // multi-month sync over one dropped request. Treat it like a 5xx:
+        // back off and retry up to maxRetries, only giving up (rethrow)
+        // once the attempts are exhausted.
+        if (attempt >= this.maxRetries) throw err;
+        const delayMs = Math.min(2 ** attempt, 60) * 1000;
+        console.warn(
+          `Chess.com API network error on ${url} (attempt ${attempt}/${this.maxRetries}) — backing off ${delayMs}ms`,
+          err,
+        );
+        await sleep(delayMs);
+        continue;
+      }
       this.lastRequestAt = performance.now();
 
       if (response.ok) return (await response.json()) as T;

@@ -11,8 +11,8 @@
   --border: #232833;
   --border-strong: #2e3542;
   --text: #edeff3;
-  --muted: #8a93a6;
-  --muted-dim: #5c6478;
+  --muted: #9aa4b6; /* lifted from #8a93a6 for AA contrast on the near-black bg */
+  --muted-dim: #6b7386;
 
   --accent: #e3a857;
   --accent-strong: #f0be73;
@@ -67,17 +67,17 @@ h3 {
 }
 
 h1 {
-  font-size: 1.7rem;
+  font-size: 1.85rem;
   margin: 0;
 }
 
 h2 {
-  font-size: 1.1rem;
+  font-size: 1.18rem;
   margin: 0 0 14px;
 }
 
 h3 {
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -85,8 +85,66 @@ h3 {
   margin: 0 0 10px;
 }
 
+/* Keyboard focus. The stylesheet previously defined no :focus rules at
+   all, so keyboard users had no visible indication of where they were.
+   :focus-visible keeps the ring off mouse clicks while showing it for
+   Tab navigation. One accent ring covers every interactive element. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.card-heading-collapsible:focus-visible {
+  outline-offset: 4px;
+}
+/* Don't leave a permanently-focused look on click-only interactions in
+   browsers that fall back to :focus. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Visually hidden but available to screen readers -- used for labels on
+   inputs that only had a placeholder before (placeholders aren't an
+   accessible name). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip link: hidden until focused, then pinned top-left so a keyboard
+   user can jump past the header straight into the cards. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 2000;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 8px;
+}
+
 .wrap {
-  max-width: 900px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 40px 24px 80px;
 }
@@ -98,14 +156,111 @@ h3 {
   margin-bottom: 6px;
 }
 
+/* Header "Feedback" button — stays `hidden` until feedback.ts confirms a
+   configured Featurebase widget is ready, so it never shows a dead control. */
+.feedback-btn {
+  align-self: center;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font: 500 0.85rem var(--font-body);
+  cursor: pointer;
+}
+.feedback-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ---- Hero: the page's first impression. States the promise and shows a
+   CTA before asking for the username. Deliberately restrained (no big
+   art yet — see the redesign notes). ---- */
+.hero {
+  padding: 24px 0 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.hero h2 {
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0 0 12px;
+  max-width: 22ch;
+}
+.hero p {
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  max-width: 52ch;
+  margin: 0 0 20px;
+}
+.hero-cta {
+  display: inline-flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hero-cta .btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+.hero-cta .btn-ghost:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+/* ---- Sticky jump nav: skip the scroll, land on a section. Hidden on
+   very small screens where it would wrap badly (skip link still covers
+   keyboard users). ---- */
+.section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  margin-bottom: 12px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.section-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+}
+.section-nav a:hover {
+  color: var(--text);
+  background: var(--panel-hover);
+}
+@media (max-width: 560px) {
+  .section-nav {
+    display: none;
+  }
+}
+
 .tagline {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
   margin: 0 0 32px;
 }
 
 .text-accent {
   color: var(--accent-strong);
+}
+
+/* Offset anchored jumps so the sticky nav doesn't cover the heading. */
+section.card,
+details.collapsible {
+  scroll-margin-top: 64px;
 }
 
 section.card {
@@ -114,6 +269,43 @@ section.card {
   border-radius: var(--radius-md);
   padding: 20px;
   margin-bottom: 20px;
+}
+
+/* ---- Card tiers: visual weight follows how often an average player
+   uses the card. Primary = every visit (focus, profile, puzzles, play);
+   secondary = occasional exploration; utility stays in <details>.
+   Bigger padding + heading + an accent spine makes the primary cards
+   dominate the viewport; the trimmed secondary cards collapse to a thin
+   strip so the stuff you rarely touch takes up proportionally little. */
+section.card[data-tier="primary"] {
+  padding: 32px;
+  border-color: var(--border-strong, var(--border));
+  box-shadow: inset 3px 0 0 0 var(--accent-strong);
+}
+section.card[data-tier="primary"] > h2 {
+  font-size: 1.5rem;
+  margin-bottom: 18px;
+}
+section.card[data-tier="secondary"] {
+  padding: 12px 18px;
+  margin-bottom: 12px;
+  opacity: 0.9;
+}
+section.card[data-tier="secondary"] > h2 {
+  font-size: 0.98rem;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.section-divider {
+  margin: 40px 0 14px;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
 }
 
 form.row {
@@ -208,10 +400,16 @@ button:disabled {
 
 .status-line {
   color: var(--muted);
-  font-size: 0.82rem;
-  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
   margin: 0;
   white-space: pre-wrap;
+}
+/* Genuine machine output (sync progress counts, engine handshake) opts
+   back into mono explicitly; plain guidance/prompts read as normal text. */
+.status-line.is-data {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
 }
 .status-line.status-error {
   color: var(--loss);
@@ -893,18 +1091,46 @@ input[type="range"] {
   .wrap {
     padding: 24px 12px 60px;
   }
+  /* Board scales to the viewport instead of a fixed 42px that only just
+     fits a 360px screen (critique #8). min() keeps it capped on tablets. */
   .play-board {
-    grid-template-columns: repeat(8, 42px);
-    grid-template-rows: repeat(8, 42px);
+    grid-template-columns: repeat(8, min(10.5vw, 42px));
+    grid-template-rows: repeat(8, min(10.5vw, 42px));
   }
   .play-piece {
-    font-size: 30px;
+    font-size: min(7.5vw, 30px);
   }
   .play-board-wrap {
     padding: 8px;
+    display: block;
   }
   input[type="range"] {
     width: 140px;
+  }
+  /* Primary cards drop their roomy 32px padding on a phone. */
+  section.card[data-tier="primary"] {
+    padding: 16px;
+  }
+  section.card[data-tier="primary"] > h2 {
+    font-size: 1.25rem;
+  }
+  /* Board + sidebar stack instead of sitting side by side. */
+  .play-layout {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .play-sidebar {
+    min-width: 0;
+    width: 100%;
+  }
+  /* Tap targets: the opening/heatmap tabs and the move-number stepper. */
+  .opening-tabs button.tab,
+  .depth-stepper button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .play-controls {
+    gap: 10px;
   }
 }
 
@@ -1151,6 +1377,21 @@ input[type="range"] {
   cursor: default;
   border-style: dashed;
 }
+.pk-practice-btn {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  font-family: var(--font-display);
+  color: var(--accent-strong);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.pk-practice-btn:hover {
+  background: var(--accent);
+  color: #1a1a1a;
+}
 .pk-pill-root:hover {
   color: var(--muted-dim);
   border-color: var(--border-strong);
@@ -1198,3 +1439,384 @@ input[type="range"] {
 .progress-label {
   margin-top: 6px;
 }
+
+/* ================= Today / Redemption / Achievements (spine additions) ================= */
+
+.today-list,
+.redeem-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.today-item,
+.redeem-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.today-item-done,
+.redeem-row.today-item-done {
+  opacity: 0.55;
+}
+.redeem-row-active {
+  border-color: var(--accent);
+}
+.today-item-main,
+.redeem-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.today-item-label,
+.redeem-row-title {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.today-dots {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+.today-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.today-dot-on {
+  background: var(--accent-strong);
+}
+.today-check {
+  color: #4ade80;
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.today-start-btn,
+.redeem-btn {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  color: var(--accent-strong);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.today-start-btn:hover,
+.redeem-btn:hover {
+  background: var(--accent);
+  color: #1a1a1a;
+}
+.today-complete {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: #4ade80;
+  margin: 0 0 4px;
+}
+
+.achv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.achv {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0.5;
+}
+.achv-got {
+  opacity: 1;
+  border-color: var(--accent);
+}
+.achv-name {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.achv-desc {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+#chegga-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 1000;
+}
+#chegga-toast.toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  #chegga-toast { transition: opacity 0.25s ease; }
+}
+
+/* ================= Juice (juice.ts) ================= */
+
+@keyframes juice-bump-anim {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.juice-bump { animation: juice-bump-anim 0.4s ease; display: inline-block; }
+
+@keyframes juice-shake-anim {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-8px); }
+  30% { transform: translateX(7px); }
+  45% { transform: translateX(-6px); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+.juice-shake { animation: juice-shake-anim 0.45s ease; }
+
+@keyframes juice-flash-good-anim {
+  0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+  25% { box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.55), 0 0 22px rgba(74, 222, 128, 0.45); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+@keyframes juice-flash-bad-anim {
+  0% { box-shadow: 0 0 0 0 rgba(242, 85, 90, 0); }
+  25% { box-shadow: 0 0 0 4px rgba(242, 85, 90, 0.5), 0 0 22px rgba(242, 85, 90, 0.4); }
+  100% { box-shadow: 0 0 0 0 rgba(242, 85, 90, 0); }
+}
+@keyframes juice-flash-gold-anim {
+  0% { box-shadow: 0 0 0 0 rgba(227, 168, 87, 0); }
+  25% { box-shadow: 0 0 0 4px rgba(227, 168, 87, 0.6), 0 0 26px rgba(227, 168, 87, 0.5); }
+  100% { box-shadow: 0 0 0 0 rgba(227, 168, 87, 0); }
+}
+.juice-flash-good { animation: juice-flash-good-anim 0.65s ease; }
+.juice-flash-bad { animation: juice-flash-bad-anim 0.65s ease; }
+.juice-flash-gold { animation: juice-flash-gold-anim 0.65s ease; }
+
+.juice-float {
+  position: fixed;
+  transform: translate(-50%, 0);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  pointer-events: none;
+  z-index: 1210;
+  animation: juice-float-anim 1.1s ease-out forwards;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.juice-float-good { color: #4ade80; }
+.juice-float-bad { color: #f2555a; }
+.juice-float-gold { color: var(--accent-strong); }
+@keyframes juice-float-anim {
+  0% { opacity: 0; transform: translate(-50%, 6px) scale(0.8); }
+  15% { opacity: 1; transform: translate(-50%, -4px) scale(1.1); }
+  100% { opacity: 0; transform: translate(-50%, -46px) scale(1); }
+}
+
+.juice-screen-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1190;
+  box-shadow: inset 0 0 120px 20px rgba(227, 168, 87, 0.45);
+  animation: juice-screen-glow-anim 0.9s ease-out forwards;
+}
+@keyframes juice-screen-glow-anim {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+#juice-banner-host {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1220;
+  pointer-events: none;
+}
+.juice-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, var(--panel), rgba(227, 168, 87, 0.16));
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 12px 18px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  transform: translateX(130%);
+  transition: transform 0.4s cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+.juice-banner-in { transform: translateX(0); }
+.juice-banner-medal { font-size: 1.6rem; }
+.juice-banner-text { display: flex; flex-direction: column; line-height: 1.25; }
+.juice-banner-text strong { font-family: var(--font-display); font-size: 0.95rem; color: var(--text); }
+.juice-banner-text span { font-size: 0.78rem; color: var(--muted); }
+
+/* Satisfying dot-fill + item-done on the Today checklist */
+@keyframes today-dot-pop {
+  0% { transform: scale(0.4); }
+  60% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.today-dot-on { animation: today-dot-pop 0.32s ease; }
+.today-item-done .today-item-label { text-decoration: line-through; text-decoration-color: var(--muted); }
+
+/* Global press feedback — cheap, kills the "static" feel */
+button:active { transform: scale(0.96); }
+button { transition: transform 0.08s ease, background 0.15s ease, color 0.15s ease; }
+section.card[data-tier="primary"] { transition: box-shadow 0.2s ease, transform 0.2s ease; }
+section.card[data-tier="primary"]:hover { transform: translateY(-1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .juice-bump, .juice-shake,
+  .juice-flash-good, .juice-flash-bad, .juice-flash-gold,
+  .today-dot-on, .juice-screen-glow { animation: none; }
+  .juice-banner { transition: opacity 0.2s ease; transform: none; opacity: 0; }
+  .juice-banner-in { opacity: 1; }
+  button:active { transform: none; }
+  section.card[data-tier="primary"]:hover { transform: none; }
+}
+
+/* ================= Real piece sets (pieceSet.ts) ================= */
+.piece-img {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.28));
+}
+.piece-img-ghost {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+}
+@media (max-width: 600px) {
+  .piece-img-ghost { width: min(11vw, 82px); height: min(11vw, 82px); }
+}
+
+/* Brand mark + wordmark in the header */
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark { flex-shrink: 0; border-radius: 8px; }
+
+.site-footer {
+  margin-top: 48px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.site-footer p {
+  color: var(--muted-dim);
+  font-size: 0.74rem;
+  line-height: 1.6;
+  margin: 0;
+}
+.site-footer a { color: var(--muted); }
+
+/* ── Designed empty / pre-data states (redesign note #5) ─────────────────
+   Shown by emptyStates.ts wherever a data-dependent card used to be
+   `display:none`. One line on what the card will hold, a decorative
+   skeleton of the populated version, and the action that fills it. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0 2px;
+}
+.empty-state-line {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  max-width: 60ch;
+  margin: 0;
+}
+.empty-state-cta {
+  align-self: flex-start;
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.empty-state-cta:hover { background: rgba(227, 168, 87, 0.2); }
+
+.empty-state-skeleton {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  padding: 16px;
+  overflow: hidden;
+}
+.empty-state-skeleton > * { animation: sk-pulse 1.8s ease-in-out infinite; }
+@keyframes sk-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.85; } }
+@media (prefers-reduced-motion: reduce) {
+  .empty-state-skeleton > * { animation: none; opacity: 0.6; }
+}
+
+.sk-line { height: 12px; border-radius: 4px; background: var(--border-strong); margin: 8px 0; }
+.sk-lead { height: 34px; width: 40%; margin-bottom: 16px; }
+.sk-w45 { width: 45%; } .sk-w55 { width: 55%; } .sk-w70 { width: 70%; }
+.sk-w80 { width: 80%; } .sk-w90 { width: 90%; }
+.sk-lines .sk-line, .sk-rows .sk-row { animation: inherit; }
+
+.sk-bars { display: flex; align-items: flex-end; gap: 10px; height: 70px; margin: 6px 0 14px; }
+.sk-bar { flex: 1; background: var(--border-strong); border-radius: 4px 4px 0 0; }
+.sk-bar:nth-child(1) { height: 60%; } .sk-bar:nth-child(2) { height: 85%; }
+.sk-bar:nth-child(3) { height: 45%; } .sk-bar:nth-child(4) { height: 70%; }
+.sk-bar:nth-child(5) { height: 55%; }
+
+.sk-scorebars { display: flex; flex-direction: column; gap: 12px; }
+.sk-scorebar { height: 14px; border-radius: 7px; background: var(--border); overflow: hidden; }
+.sk-scorebar span { display: block; height: 100%; background: var(--border-strong); }
+
+.sk-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: min(280px, 70%);
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.sk-board span { background: var(--panel-hover); }
+.sk-board span:nth-child(odd) { background: var(--border); }
+
+.sk-chart { width: 100%; height: 90px; display: block; }
+.sk-chart polyline { fill: none; stroke: var(--border-strong); stroke-width: 3; }
+
+.sk-rows { display: flex; flex-direction: column; gap: 10px; }
+.sk-row { height: 22px; border-radius: 5px; background: var(--border-strong); }
+.sk-row:nth-child(2) { width: 92%; } .sk-row:nth-child(3) { width: 84%; }
+.sk-row:nth-child(4) { width: 76%; }

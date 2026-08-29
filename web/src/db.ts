@@ -10,10 +10,11 @@
 
 const DB_NAME = "chegga-web";
 // v2 adds `skillSnapshots` (the growth-path feature's progress-over-time
-// store) -- onupgradeneeded only adds what's missing, so a real v1
-// browser DB upgrades in place without losing its existing games/
-// moveAnalysis/syncState data.
-const DB_VERSION = 2;
+// store). v3 adds `curatedPuzzles` (the bundled Lichess CC0 puzzle
+// subset -- see curatedPuzzles.ts). onupgradeneeded only adds what's
+// missing, so a real v1/v2 browser DB upgrades in place without losing
+// its existing games/moveAnalysis/syncState/skillSnapshots data.
+const DB_VERSION = 3;
 
 /** Real bug caught live (2026-08-26): a bare `indexedDB.open` with no
  * `onblocked` handler and no timeout can hang forever -- neither
@@ -80,6 +81,15 @@ export function openDb(): Promise<IDBDatabase> {
           keyPath: ["username", "dateStamp"], // one snapshot per calendar day per visitor
         });
         skillSnapshots.createIndex("byUsername", "username", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("curatedPuzzles")) {
+        const curated = db.createObjectStore("curatedPuzzles", { keyPath: "id" });
+        // multiEntry so a single .getAll(theme) returns every puzzle
+        // carrying that theme -- the primary "themed puzzles" query.
+        curated.createIndex("byTheme", "themeList", { unique: false, multiEntry: true });
+        curated.createIndex("byOpening", "openingList", { unique: false, multiEntry: true });
+        curated.createIndex("byRating", "rating", { unique: false });
       }
     };
 
@@ -159,6 +169,19 @@ export interface SkillSnapshotRecord {
   scores: Record<string, number>; // skillProfile.ts's SKILL_CATEGORIES ids -> 0-100
   weakestCategory?: string;
   gamesAnalyzed: number;
+}
+
+export interface CuratedPuzzleRecord {
+  id: string; // Lichess PuzzleId
+  fen: string; // position BEFORE the opponent's setup move
+  moves: string; // UCI, space-separated; moves[0] is the opponent's move, moves[1] is the first solution move
+  rating: number;
+  ratingDeviation: number;
+  popularity: number;
+  themes: string; // raw space-separated, for display
+  themeList: string[]; // indexed (multiEntry)
+  openingTags: string; // raw space-separated, may be empty
+  openingList: string[]; // indexed (multiEntry)
 }
 
 export interface SyncStateRecord {
@@ -300,6 +323,36 @@ export function getSkillSnapshots(db: IDBDatabase, username: string): Promise<Sk
   const tx = db.transaction("skillSnapshots", "readonly");
   const index = tx.objectStore("skillSnapshots").index("byUsername");
   return req(index.getAll(IDBKeyRange.only(username))).then((rows) => rows.sort((a, b) => a.timestamp - b.timestamp));
+}
+
+// --- Store helpers (curated Lichess puzzle subset) ---
+
+export function countCuratedPuzzles(db: IDBDatabase): Promise<number> {
+  const tx = db.transaction("curatedPuzzles", "readonly");
+  return req(tx.objectStore("curatedPuzzles").count());
+}
+
+/** One transaction for the whole bundle load (~100k rows). Resolves only
+ * once every put has committed, so callers can treat "done" as "the store
+ * is fully populated." */
+export function bulkPutCuratedPuzzles(db: IDBDatabase, puzzles: CuratedPuzzleRecord[]): Promise<void> {
+  const tx = db.transaction("curatedPuzzles", "readwrite");
+  const store = tx.objectStore("curatedPuzzles");
+  for (const p of puzzles) store.put(p);
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export function getCuratedPuzzlesByTheme(db: IDBDatabase, theme: string): Promise<CuratedPuzzleRecord[]> {
+  const tx = db.transaction("curatedPuzzles", "readonly");
+  return req(tx.objectStore("curatedPuzzles").index("byTheme").getAll(IDBKeyRange.only(theme)));
+}
+
+export function getCuratedPuzzlesByOpening(db: IDBDatabase, opening: string): Promise<CuratedPuzzleRecord[]> {
+  const tx = db.transaction("curatedPuzzles", "readonly");
+  return req(tx.objectStore("curatedPuzzles").index("byOpening").getAll(IDBKeyRange.only(opening)));
 }
 
 // --- Store helpers (export/import — a visitor's only copy of their data

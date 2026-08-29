@@ -9,6 +9,7 @@
 // mapping table is the next step, not this view).
 
 import { PK_NODES, PK_DOMAIN_INFO, PK_LEVEL_LABEL, type PkDomain, type PkNode } from "./pkTaxonomy";
+import { lichessThemesForPkCode } from "./pkPuzzleMap";
 
 const DOMAIN_ORDER: PkDomain[] = ["BV", "TC", "EG", "ST", "OP"];
 
@@ -50,6 +51,7 @@ export function renderTaxonomyBrowser(): string {
   return `
     <div class="pk-controls">
       <div class="pk-controls-row">
+        <label for="pk-search" class="sr-only">Search the taxonomy</label>
         <input type="text" id="pk-search" placeholder="Search a concept or code, e.g. &quot;fork&quot;, &quot;Lucena&quot;, &quot;TC-30&quot;…" />
         <div class="pk-chip-group" id="pk-domain-chips">${chips}</div>
       </div>
@@ -70,6 +72,11 @@ function renderNodeCard(n: PkNode): string {
     ? n.prereqs.map((p) => `<button type="button" class="pk-pill" data-jump="${p}">${p}</button>`).join("")
     : `<span class="pk-pill pk-pill-root">entry point</span>`;
 
+  const themes = lichessThemesForPkCode(n.code);
+  const practiceHtml = themes
+    ? `<button type="button" class="pk-practice-btn" data-practice-code="${n.code}">Practice this ▸</button>`
+    : "";
+
   return `
     <div class="pk-node-card" id="pk-node-${n.code}" data-domain="${n.domain}" data-level="${n.level}" data-search="${esc((n.code + " " + n.name).toLowerCase())}">
       <div class="pk-node-top">
@@ -78,6 +85,7 @@ function renderNodeCard(n: PkNode): string {
       </div>
       <p class="pk-node-name">${esc(n.name)}</p>
       <div class="pk-node-prereqs">${prereqHtml}</div>
+      ${practiceHtml}
     </div>
   `;
 }
@@ -87,7 +95,10 @@ function renderNodeCard(n: PkNode): string {
  * a data attribute isn't needed since this section is only ever rendered
  * once (unlike focus-output, this content is static, not re-rendered per
  * refreshProfile). */
-export function wireTaxonomyBrowser(root: HTMLElement): void {
+export function wireTaxonomyBrowser(
+  root: HTMLElement,
+  onPractice?: (pkCode: string, themes: string[], nodeName: string) => void,
+): void {
   const search = root.querySelector<HTMLInputElement>("#pk-search")!;
   const chipsWrap = root.querySelector<HTMLElement>("#pk-domain-chips")!;
   const slider = root.querySelector<HTMLInputElement>("#pk-level-slider")!;
@@ -151,6 +162,15 @@ export function wireTaxonomyBrowser(root: HTMLElement): void {
   // target is guaranteed visible, same approach as openingExplorer's
   // depth-stepper reset.
   sectionsEl.addEventListener("click", (e) => {
+    const practiceBtn = (e.target as HTMLElement).closest<HTMLButtonElement>(".pk-practice-btn[data-practice-code]");
+    if (practiceBtn && onPractice) {
+      const code = practiceBtn.dataset.practiceCode!;
+      const themes = lichessThemesForPkCode(code);
+      const node = PK_NODES.find((n) => n.code === code);
+      if (themes && node) onPractice(code, themes, node.name);
+      return;
+    }
+
     const pill = (e.target as HTMLElement).closest<HTMLButtonElement>(".pk-pill[data-jump]");
     if (!pill) return;
     const targetId = "pk-node-" + pill.dataset.jump;

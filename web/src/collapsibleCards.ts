@@ -26,7 +26,19 @@ const STATE_KEY_PREFIX = "chegga-web:card-collapsed:";
 // brand-new visitor, who has no focus data yet -- caught live the same
 // way: the sync form was in the DOM but invisible/unclickable behind its
 // own collapsed card on first load.
-const DEFAULT_EXPANDED_IDS = new Set(["focus-section", "sync-section"]);
+// Primary-tier cards (the ones a returning player uses every visit) default
+// open; secondary/utility cards stay collapsed until opened. profile- and
+// puzzle-section start life as display:none and are revealed once there's
+// data -- listing them here means they come up already expanded, not as a
+// collapsed strip the player has to hunt for and click.
+const DEFAULT_EXPANDED_IDS = new Set([
+  "today-section",
+  "focus-section",
+  "sync-section",
+  "profile-section",
+  "puzzle-section",
+  "play-section",
+]);
 
 /** Collapsed by default until the viewer explicitly opens (and thereby
  * saves a preference for) a card -- distinct from "never set," which is
@@ -59,9 +71,11 @@ export function expandCard(cardId: string): void {
   if (!card) return;
   const body = card.querySelector<HTMLElement>(".card-body");
   const chevron = card.querySelector<HTMLElement>(".card-chevron");
+  const heading = card.querySelector<HTMLElement>(".card-heading-collapsible");
   if (!body) return;
   body.style.display = "";
   if (chevron) chevron.textContent = "▾";
+  if (heading) heading.setAttribute("aria-expanded", "true");
   saveCollapsed(cardId, false);
 }
 
@@ -93,20 +107,41 @@ export function setupCollapsibleCards(): void {
     const chevron = document.createElement("span");
     chevron.className = "card-chevron";
     chevron.textContent = "▾";
+    chevron.setAttribute("aria-hidden", "true");
     heading.appendChild(chevron);
     heading.classList.add("card-heading-collapsible");
+
+    // The heading is the real control: a plain <h2> with a click handler
+    // is invisible to keyboard and screen-reader users, so give it button
+    // semantics, focusability, and Enter/Space activation. `aria-expanded`
+    // + `aria-controls` let a screen reader announce the collapsed state
+    // and what it toggles.
+    const bodyId = `${cardId}-body`;
+    body.id = bodyId;
+    heading.setAttribute("role", "button");
+    heading.setAttribute("tabindex", "0");
+    heading.setAttribute("aria-controls", bodyId);
 
     function applyState(collapsed: boolean) {
       body.style.display = collapsed ? "none" : "";
       chevron.textContent = collapsed ? "▸" : "▾";
+      heading!.setAttribute("aria-expanded", collapsed ? "false" : "true");
     }
 
     applyState(loadCollapsed(cardId));
 
-    heading.addEventListener("click", () => {
+    function toggle() {
       const collapsed = body.style.display !== "none";
       applyState(collapsed);
       saveCollapsed(cardId, collapsed);
+    }
+
+    heading.addEventListener("click", toggle);
+    heading.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+        e.preventDefault(); // Space would otherwise scroll the page
+        toggle();
+      }
     });
   });
 }

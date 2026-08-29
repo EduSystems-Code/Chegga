@@ -53,7 +53,35 @@ function renderTrendChart(snapshots: SkillSnapshotRecord[], category: SkillCateg
   `;
 }
 
+/** A one-line "here's what moved since you were last here" banner
+ * (critique #1): diff the two most recent daily snapshots per category.
+ * Higher score = better play, so a positive delta is green. Silent if
+ * there's only one snapshot or nothing changed by at least a point. */
+function renderSinceLastVisit(snapshots: SkillSnapshotRecord[]): string {
+  if (snapshots.length < 2) return "";
+  const curr = snapshots[snapshots.length - 1];
+  const prev = snapshots[snapshots.length - 2];
+  const days = Math.max(1, Math.round((curr.timestamp - prev.timestamp) / 86_400_000));
+
+  const parts: string[] = [];
+  (Object.keys(SKILL_CATEGORY_LABELS) as SkillCategoryId[]).forEach((cat) => {
+    const a = prev.scores[cat];
+    const b = curr.scores[cat];
+    if (a === undefined || b === undefined) return;
+    const d = Math.round((b - a) * 10) / 10;
+    if (Math.abs(d) < 1) return;
+    const color = d > 0 ? "#4ade80" : "#f2555a";
+    parts.push(`${esc(SKILL_CATEGORY_LABELS[cat])} <span style="color:${color}">${d > 0 ? "+" : ""}${d}</span>`);
+  });
+
+  if (parts.length === 0) {
+    return `<p class="status-line" style="margin-bottom:12px">No measurable change since your last session (${days}d ago) — analyze more games to move the needle.</p>`;
+  }
+  return `<p class="since-last-visit" style="margin-bottom:12px"><strong>Since ${days}d ago:</strong> ${parts.join(" · ")}</p>`;
+}
+
 export function renderSkillProfile(assessment: SkillAssessment, snapshots: SkillSnapshotRecord[]): string {
+  const sinceLastVisit = renderSinceLastVisit(snapshots);
   const bars = assessment.scores
     .map((s) => {
       if (s.score === undefined) {
@@ -77,6 +105,7 @@ export function renderSkillProfile(assessment: SkillAssessment, snapshots: Skill
 
   if (!assessment.weakest) {
     return `
+      ${sinceLastVisit}
       <div class="skill-bars">${bars}</div>
       <p class="status-line" style="margin-top:12px">${esc(assessment.rootCause)}</p>
     `;
@@ -87,6 +116,7 @@ export function renderSkillProfile(assessment: SkillAssessment, snapshots: Skill
     : "";
 
   return `
+    ${sinceLastVisit}
     <div class="skill-bars">${bars}</div>
     <div class="skill-focus-card">
       <h3 style="margin-top:0">Current focus: ${esc(SKILL_CATEGORY_LABELS[assessment.weakest.category])}</h3>

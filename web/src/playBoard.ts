@@ -19,17 +19,13 @@
 // instance on the page reskins together.
 
 import { Chess, type Square } from "chess.js";
+import { playPieceHtml, pieceImgUrl, PIECE_GLYPH } from "./pieceSet";
 
 const SELECTED_COLOR = "#3a4a2e";
 const LAST_MOVE_COLOR = "rgba(227, 168, 87, 0.18)";
 const CHECK_COLOR = "rgba(242, 85, 90, 0.35)";
 const DRAG_HOVER_COLOR = "rgba(227, 168, 87, 0.30)";
 const DRAG_START_PX = 4; // movement threshold before a pointerdown counts as a drag, not a tap
-
-const PIECE_GLYPH: Record<string, string> = {
-  wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔",
-  bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚",
-};
 
 export type GameStatus =
   | { over: false; inCheck: boolean }
@@ -125,6 +121,12 @@ export class PlayBoard {
 
   setLocked(locked: boolean): void {
     this.locked = locked;
+    this.render();
+  }
+
+  /** Re-render in place (e.g. after the piece set changed) without
+   * touching game state. */
+  redraw(): void {
     this.render();
   }
 
@@ -300,8 +302,17 @@ export class PlayBoard {
     const ghost = document.createElement("div");
     ghost.className = "play-drag-ghost";
     if (piece) {
-      ghost.textContent = PIECE_GLYPH[piece.color + piece.type];
-      ghost.classList.add(piece.color === "w" ? "play-piece-white" : "play-piece-black");
+      const url = pieceImgUrl(piece.color, piece.type);
+      if (url) {
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "";
+        img.className = "piece-img-ghost";
+        ghost.appendChild(img);
+      } else {
+        ghost.textContent = PIECE_GLYPH[piece.color + piece.type];
+        ghost.classList.add(piece.color === "w" ? "play-piece-white" : "play-piece-black");
+      }
     }
     document.body.appendChild(ghost);
     return ghost;
@@ -432,19 +443,17 @@ export class PlayBoard {
         const tint = this.heatmapMode === "control" ? this.controlTint(square) : null;
 
         const piece = this.chess.get(square);
-        const glyph = piece ? PIECE_GLYPH[piece.color + piece.type] : "";
-        const pieceColorClass = piece?.color === "w" ? "play-piece-white" : "play-piece-black";
         const dot = legalTargets.has(square) ? `<span class="play-legal-dot"></span>` : "";
         // The piece being actively dragged is dimmed in its origin square
         // (not hidden outright) so the square still reads clearly while
         // the ghost follows the cursor -- the same convention chess.com
         // uses rather than leaving a hard gap on the board.
-        const dimStyle = square === isDraggingFrom ? "opacity:0.35" : "";
+        const pieceHtml = piece ? playPieceHtml(piece.color, piece.type, { dim: square === isDraggingFrom }) : "";
 
         squaresHtml += `
           <div class="play-square" data-square="${square}" style="background:${bg}">
             ${tint ? `<span class="play-heatmap-tint" style="background:${tint}"></span>` : ""}
-            ${glyph ? `<span class="play-piece ${pieceColorClass}" style="${dimStyle}">${glyph}</span>` : ""}
+            ${pieceHtml}
             ${dot}
           </div>`;
       }

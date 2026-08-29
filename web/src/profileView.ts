@@ -19,9 +19,14 @@ function statCard(value: string, label: string): string {
   return `<div class="stat-card"><div class="stat-value">${escapeHtml(value)}</div><div class="stat-label">${escapeHtml(label)}</div></div>`;
 }
 
+// Below this many analyzed games the rating estimate is too thin a sample
+// to show even as a band -- a wild point guess off 4 games reads as
+// authoritative when it's essentially noise (critique #5).
+const STRENGTH_MIN_GAMES = 15;
+
 export function renderProfile(
   profile: ProfileSummary,
-  strength?: { avgEstimate: number; sampleSize: number; cvR2?: number },
+  strength?: { avgEstimate: number; sampleSize: number; cvR2?: number; cvMae?: number },
 ): string {
   const classificationBar = CLASSIFICATION_ORDER.filter((label) => profile.classificationCounts[label] > 0)
     .map((label) => {
@@ -65,16 +70,31 @@ export function renderProfile(
   // variance -- shown honestly rather than left implicit, since a bare
   // number here reads as far more confident than the underlying model
   // actually is (see strengthEstimate.ts).
-  const strengthCard = strength
-    ? statCard(`~${Math.round(strength.avgEstimate)}`, `rough rating guess (n=${strength.sampleSize})`)
-    : "";
-  const strengthCaveat =
-    strength && strength.cvR2 !== undefined
-      ? `<p class="tagline" style="margin-top:-8px;margin-bottom:16px">
-           Rough guess only, not a real rating: this model explains about ${Math.round(strength.cvR2 * 100)}% of
-           rating variance in the games it was trained on. Take it as a very loose direction, not a number to trust.
-         </p>`
-      : "";
+  // Show a RANGE, not a point value: the model's cross-validated mean
+  // absolute error (cvMae) is roughly how far off any single estimate
+  // tends to be, so estimate ± cvMae (rounded to 25) is an honest band.
+  // Below STRENGTH_MIN_GAMES analyzed games, don't show a number at all.
+  let strengthCard = "";
+  let strengthCaveat = "";
+  if (strength && strength.sampleSize >= STRENGTH_MIN_GAMES) {
+    const mid = Math.round(strength.avgEstimate);
+    const halfWidth = strength.cvMae ? Math.round(strength.cvMae / 25) * 25 : 150;
+    const lo = Math.max(100, mid - halfWidth);
+    const hi = mid + halfWidth;
+    strengthCard = statCard(`${lo}–${hi}`, `rough rating range (n=${strength.sampleSize})`);
+    if (strength.cvR2 !== undefined) {
+      strengthCaveat = `<p class="tagline" style="margin-top:-8px;margin-bottom:16px">
+           A range, not a rating: this model explains only about ${Math.round(strength.cvR2 * 100)}% of
+           rating variance in its training games, so the true number lands somewhere in this band at best. Loose
+           direction only.
+         </p>`;
+    }
+  } else if (strength) {
+    strengthCaveat = `<p class="tagline" style="margin-top:-8px;margin-bottom:16px">
+         Analyze at least ${STRENGTH_MIN_GAMES} games (you have ${strength.sampleSize}) for a rating range —
+         fewer than that is too small a sample to estimate from.
+       </p>`;
+  }
 
   return `
     <div class="stat-grid">
