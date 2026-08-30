@@ -1,0 +1,359 @@
+/* ================================================================
+   Chegga Web — mobile / small-viewport pass
+   ================================================================
+   First real pass over the whole app at phone widths (2026-08-29).
+   Still NOT verified on a physical device — every rule here is from
+   reading the layout, not from loading it on a phone — but it is a
+   component-by-component audit, not just the play-board baseline that
+   was in style.css.
+
+   Loaded AFTER style.css (see main.ts), so equal-specificity rules
+   here win. It SUPERSEDES these blocks already in style.css — fold
+   those in when convenient:
+     - `@media (max-width: 560px) { .section-nav { display: none } }`
+       (nav is now a scrollable strip, not hidden)
+     - `@media (max-width: 600px) { … }` (the play-board block) — the
+       board sizing there is still authoritative; this file only adds
+       what that block didn't cover.
+
+   Breakpoints: 600px = phone; 400px = small phone tightening.
+   ================================================================ */
+
+/* ---- Global safety nets ---------------------------------------- */
+
+/* Long unbroken tokens — a pasted username, a German opening name —
+   must wrap rather than push the page wide. */
+body {
+  overflow-wrap: break-word;
+}
+
+/* `clip` (not `hidden`) kills stray horizontal scroll without turning
+   <body> into a scroll container, so `position: sticky` still works.
+   A net for anything this pass missed, not a substitute for a fix. */
+@media (max-width: 600px) {
+  body {
+    overflow-x: clip;
+  }
+}
+
+@media (max-width: 600px) {
+  /* iOS Safari zooms the whole page in when a focused field's text is
+     < 16px. Every form control in the app is 0.82–0.88rem, so tapping
+     the username box, the "analyze count" box, the export textarea or
+     the PK search field all trigger the zoom-and-never-zoom-back bug.
+     16px on focus-able controls is the standard fix. */
+  input[type="text"],
+  input[type="number"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Roomier line-height helps thumbs land on the right field. */
+  input[type="text"],
+  input[type="number"],
+  select {
+    padding-top: 11px;
+    padding-bottom: 11px;
+  }
+}
+
+/* ---- Header --------------------------------------------------- */
+
+@media (max-width: 600px) {
+  .header {
+    flex-wrap: wrap;
+    align-items: center; /* `baseline` looks broken once it wraps */
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .header h1 {
+    font-size: 1.4rem;
+  }
+  .feedback-btn {
+    /* Sits under the wordmark on its own row — give it a real target. */
+    min-height: 38px;
+  }
+}
+
+/* ---- Hero ---------------------------------------------------- */
+
+@media (max-width: 600px) {
+  .hero {
+    padding: 12px 0 4px;
+    margin-bottom: 16px;
+  }
+  .hero h2 {
+    font-size: 1.45rem;
+    line-height: 1.2;
+    margin-bottom: 10px;
+  }
+  .hero p {
+    font-size: 0.95rem;
+    margin-bottom: 16px;
+  }
+  .hero-cta button {
+    min-height: 44px;
+  }
+}
+
+/* Stack the two hero CTAs full-width on a small phone so neither is a
+   thin half-width target. */
+@media (max-width: 420px) {
+  .hero-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .hero-cta button {
+    width: 100%;
+  }
+}
+
+/* ---- Section jump-nav: scrollable strip, not hidden ----------
+   Redesign note asked for "a sticky segmented control" on mobile
+   instead of the flat `display:none`. This is that: a one-line
+   horizontally-scrollable rail of pills that stays pinned. */
+
+@media (max-width: 600px) {
+  .section-nav {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    gap: 6px;
+    padding: 8px 0;
+    margin-bottom: 10px;
+    /* hide the scrollbar — the row is obviously swipeable */
+    scrollbar-width: none;
+  }
+  .section-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .section-nav a {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    white-space: nowrap;
+    padding: 7px 12px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    font-size: 0.82rem;
+  }
+}
+
+/* ---- Cards ---------------------------------------------------- */
+
+@media (max-width: 600px) {
+  section.card {
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  section.card[data-tier="secondary"] {
+    padding: 12px 14px;
+  }
+  .section-divider {
+    margin: 28px 0 12px;
+  }
+  section.card,
+  details.collapsible {
+    scroll-margin-top: 56px; /* matches the shorter mobile nav strip */
+  }
+}
+
+/* ---- Stat grid --------------------------------------------- */
+
+@media (max-width: 600px) {
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .stat-value {
+    font-size: 1.2rem;
+  }
+}
+
+/* ---- Wide tables ------------------------------------------- */
+/* Base `table` is already `display:block; overflow-x:auto`. Just make
+   the scroll contained and stop the page from rubber-banding with it. */
+@media (max-width: 600px) {
+  table {
+    overscroll-behavior-x: contain;
+  }
+}
+
+/* ---- Skill bars: stack label over track ------------------- */
+/* `.skill-bar-label` is a fixed 170px — more than half a 320px screen.
+   Put the label on its own line and let the track go full width. */
+@media (max-width: 600px) {
+  .skill-bar-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+  }
+  .skill-bar-label {
+    width: auto;
+  }
+}
+
+/* ---- Growth cards --------------------------------------- */
+
+@media (max-width: 600px) {
+  .blunder-rate-headline {
+    gap: 14px;
+  }
+  .plan-days {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .road-header {
+    gap: 10px;
+  }
+  .road-jump-btn,
+  .plan-jump-btn {
+    margin-left: 0;
+  }
+}
+
+/* ---- Move-by-move heatmap stepper ---------------------- */
+@media (max-width: 600px) {
+  .depth-stepper {
+    gap: 8px;
+    justify-content: space-between;
+  }
+  .depth-label {
+    min-width: 0;
+    flex: 1;
+  }
+}
+
+/* ---- Cheat sheet ------------------------------------- */
+@media (max-width: 400px) {
+  .cs-board {
+    width: 62vw;
+    height: 62vw;
+  }
+}
+
+/* ---- Play vs. bot ----------------------------------- */
+/* style.css's `@media (max-width:600px)` already scales `.play-board`
+   and `.play-piece` to the viewport and stacks `.play-layout`. What
+   it misses: */
+@media (max-width: 600px) {
+  /* The existing block sets `.play-board-wrap { display:block }`, which
+     makes the green frame span the full row with the board stranded on
+     the left. Shrink-wrap it back to the board. */
+  .play-board-wrap {
+    display: inline-block;
+    padding: 6px;
+  }
+
+  /* The drag "ghost" glyph is a fixed 70px — huge next to a ~34px
+     mobile square. (The real piece-set image ghost is already scaled;
+     this is the text fallback.) */
+  .play-drag-ghost {
+    font-size: min(9vw, 40px);
+  }
+
+  /* Promotion picker: 4 × 44px glyph buttons + padding overflow a
+     phone. Shrink the glyphs and let them wrap if they still must. */
+  .play-promo-picker {
+    gap: 6px;
+    padding: 8px;
+    flex-wrap: wrap;
+    max-width: calc(100vw - 32px);
+  }
+  .play-promo-btn {
+    font-size: 30px;
+    padding: 6px 10px;
+  }
+
+  /* Legal-move dot scales with the smaller square. */
+  .play-legal-dot {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* ---- PK taxonomy browser --------------------------- */
+/* `.pk-controls` is `position: sticky; top: 0`. With the jump-nav now
+   also sticky at top:0 on mobile, the two overlap when the (long) PK
+   card scrolls under the nav. Sticky filters inside an already-tall
+   card earn little on a phone — drop the stick. */
+@media (max-width: 600px) {
+  .pk-controls {
+    position: static;
+  }
+  .pk-node-grid {
+    grid-template-columns: 1fr;
+  }
+  .pk-domain-note {
+    max-width: none;
+  }
+}
+
+/* ---- Today / redemption / achievements ------------- */
+@media (max-width: 600px) {
+  .today-item,
+  .redeem-row {
+    flex-wrap: wrap;
+  }
+  .today-start-btn,
+  .redeem-btn {
+    min-height: 36px;
+  }
+  .achv-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}
+
+/* ---- Fixed-position overlays: keep them inside the viewport ----
+   None of these had a max-width; on a narrow screen a long string in
+   any of them pushed past both edges and created horizontal scroll. */
+
+.juice-banner {
+  max-width: calc(100vw - 36px);
+}
+.juice-banner-text strong,
+.juice-banner-text span {
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 600px) {
+  #juice-banner-host {
+    left: 12px;
+    right: 12px;
+  }
+  .juice-banner {
+    max-width: none;
+  }
+  #chegga-toast {
+    max-width: calc(100vw - 32px);
+    text-align: center;
+  }
+}
+
+/* ---- Forms: full-width buttons on a small phone --------------- */
+@media (max-width: 480px) {
+  form.row {
+    gap: 8px;
+  }
+  form.row button[type="submit"],
+  form.row > button {
+    width: 100%;
+  }
+}
+
+/* ---- Charts / SVG (defensive) -------------------------------- */
+/* The view code already emits `width="100%" style="max-width:…"` on
+   every chart and the opening board, so they scale. This is only a
+   backstop for any inline SVG that slips through. */
+@media (max-width: 600px) {
+  .card svg {
+    max-width: 100%;
+  }
+}

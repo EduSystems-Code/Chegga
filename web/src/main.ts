@@ -14,6 +14,7 @@ import { installErrorOverlay } from "./errorOverlay";
 installErrorOverlay(); // first, before anything else can throw
 
 import "./style.css";
+import "./mobile.css"; // small-viewport pass — loaded after style.css so equal-specificity rules win
 import { showEmptyStates, emptyFor, clearEmptyFor, wireEmptyStateCtas } from "./emptyStates";
 import {
   openDb,
