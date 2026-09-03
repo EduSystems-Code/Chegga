@@ -1653,6 +1653,18 @@ weeklyPlanOutput.addEventListener("click", (e) => {
     return;
   }
 });
+// Every diagnostic card that names a fix gets a jump button to the tool
+// that trains it (critique #7). Same data-action contract as the growth
+// cards; one delegated handler covers the cards whose innerHTML is
+// replaced wholesale on each load.
+for (const el of [blunderRateOutput, consistencyOutput, convertOutput]) {
+  el.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-action]");
+    if (!btn) return;
+    jumpToGrowthAction(JSON.parse(btn.dataset.action ?? "{}") as { kind: string; phase?: "opening" | "middlegame" | "endgame" });
+  });
+}
+
 weeklyPlanOutput.addEventListener("change", (e) => {
   const box = (e.target as HTMLElement).closest<HTMLInputElement>(".plan-check");
   if (!box) return;

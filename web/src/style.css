@@ -1876,6 +1876,20 @@ section.card[data-tier="primary"]:hover { transform: translateY(-1px); }
 }
 .road-jump-btn:hover, .plan-jump-btn:hover { background: var(--accent); color: var(--accent-ink); }
 
+/* The "-> do this" jump under a diagnostic card (blunder rate, convert
+   the win, ...). Same affordance as the growth-card jump buttons. */
+.card-action { margin: 16px 0 0; }
+.card-action button {
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.card-action button:hover { background: var(--accent); color: var(--accent-ink); }
+
 .blunder-rate-headline { display: flex; flex-wrap: wrap; gap: 24px; }
 .brh-stat { display: flex; flex-direction: column; }
 .brh-num { font-size: 1.7rem; font-weight: 700; color: var(--accent-strong); font-family: var(--font-mono); }
