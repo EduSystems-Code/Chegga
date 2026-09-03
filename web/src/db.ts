@@ -11,10 +11,11 @@
 const DB_NAME = "chegga-web";
 // v2 adds `skillSnapshots` (the growth-path feature's progress-over-time
 // store). v3 adds `curatedPuzzles` (the bundled Lichess CC0 puzzle
-// subset -- see curatedPuzzles.ts). onupgradeneeded only adds what's
-// missing, so a real v1/v2 browser DB upgrades in place without losing
-// its existing games/moveAnalysis/syncState/skillSnapshots data.
-const DB_VERSION = 3;
+// subset -- see curatedPuzzles.ts). v4 adds `rivalSnapshots` (the
+// since-last-visit head-to-head delta). onupgradeneeded only adds what's
+// missing, so a real v1/v2/v3 browser DB upgrades in place without losing
+// any existing data.
+const DB_VERSION = 4;
 
 /** Real bug caught live (2026-08-26): a bare `indexedDB.open` with no
  * `onblocked` handler and no timeout can hang forever -- neither
@@ -90,6 +91,13 @@ export function openDb(): Promise<IDBDatabase> {
         curated.createIndex("byTheme", "themeList", { unique: false, multiEntry: true });
         curated.createIndex("byOpening", "openingList", { unique: false, multiEntry: true });
         curated.createIndex("byRating", "rating", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("rivalSnapshots")) {
+        const rivalSnapshots = db.createObjectStore("rivalSnapshots", {
+          keyPath: ["username", "dateStamp"], // one snapshot per calendar day per visitor
+        });
+        rivalSnapshots.createIndex("byUsername", "username", { unique: false });
       }
     };
 
@@ -169,6 +177,27 @@ export interface SkillSnapshotRecord {
   scores: Record<string, number>; // skillProfile.ts's SKILL_CATEGORIES ids -> 0-100
   weakestCategory?: string;
   gamesAnalyzed: number;
+}
+
+/** A slim projection of rivalTracking.ts's RivalRecord — just the fields
+ * the since-last-visit delta compares. Defined here (not in
+ * rivalTracking.ts) so the store's type stays in the base DB layer, the
+ * same way GameRecord does. */
+export interface RivalSnapshotEntry {
+  opponent: string;
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  winRate: number;
+  recentAvgOpponentRating?: number;
+}
+
+export interface RivalSnapshotRecord {
+  username: string;
+  dateStamp: string; // "YYYY-MM-DD", local calendar day — one per day per visitor
+  timestamp: number; // unix ms, for ordering/display
+  records: RivalSnapshotEntry[];
 }
 
 export interface CuratedPuzzleRecord {
@@ -325,6 +354,24 @@ export function getSkillSnapshots(db: IDBDatabase, username: string): Promise<Sk
   return req(index.getAll(IDBKeyRange.only(username))).then((rows) => rows.sort((a, b) => a.timestamp - b.timestamp));
 }
 
+// --- Store helpers (rival head-to-head snapshots, for the since-last-visit delta) ---
+
+export function putRivalSnapshot(db: IDBDatabase, snapshot: RivalSnapshotRecord): Promise<void> {
+  const tx = db.transaction("rivalSnapshots", "readwrite");
+  tx.objectStore("rivalSnapshots").put(snapshot);
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Every rival snapshot for a visitor, oldest first. */
+export function getRivalSnapshots(db: IDBDatabase, username: string): Promise<RivalSnapshotRecord[]> {
+  const tx = db.transaction("rivalSnapshots", "readonly");
+  const index = tx.objectStore("rivalSnapshots").index("byUsername");
+  return req(index.getAll(IDBKeyRange.only(username))).then((rows) => rows.sort((a, b) => a.timestamp - b.timestamp));
+}
+
 // --- Store helpers (curated Lichess puzzle subset) ---
 
 export function countCuratedPuzzles(db: IDBDatabase): Promise<number> {
@@ -361,12 +408,13 @@ export function getCuratedPuzzlesByOpening(db: IDBDatabase, opening: string): Pr
 // hours of in-browser Stockfish analysis) ---
 
 export interface ExportedData {
-  formatVersion: 1 | 2;
+  formatVersion: 1 | 2 | 3;
   exportedAt: number; // unix ms
   games: GameRecord[];
   moveAnalysis: MoveAnalysisRecord[];
   syncState: SyncStateRecord[];
   skillSnapshots?: SkillSnapshotRecord[]; // absent on a v1 export -- treated as empty on import
+  rivalSnapshots?: RivalSnapshotRecord[]; // absent before v3 -- treated as empty on import
 }
 
 function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
@@ -375,41 +423,51 @@ function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
 }
 
 export async function exportAllData(db: IDBDatabase): Promise<ExportedData> {
-  const [games, moveAnalysis, syncState, skillSnapshots] = await Promise.all([
+  const [games, moveAnalysis, syncState, skillSnapshots, rivalSnapshots] = await Promise.all([
     getAll<GameRecord>(db, "games"),
     getAll<MoveAnalysisRecord>(db, "moveAnalysis"),
     getAll<SyncStateRecord>(db, "syncState"),
     getAll<SkillSnapshotRecord>(db, "skillSnapshots"),
+    getAll<RivalSnapshotRecord>(db, "rivalSnapshots"),
   ]);
-  return { formatVersion: 2, exportedAt: Date.now(), games, moveAnalysis, syncState, skillSnapshots };
+  return { formatVersion: 3, exportedAt: Date.now(), games, moveAnalysis, syncState, skillSnapshots, rivalSnapshots };
 }
 
 /** Upserts every record from `data` into the current DB — safe to run
  * against a DB that already has some overlapping games (same upsert-by-key
  * semantics as sync), so importing into a browser that already has partial
- * data merges rather than duplicating or erroring. Accepts both a v1
- * export (no skillSnapshots field -- older backups shouldn't become
- * unreadable just because a new store was added later) and v2. */
+ * data merges rather than duplicating or erroring. Accepts a v1 export (no
+ * skillSnapshots), v2 (no rivalSnapshots), or v3 — an older backup
+ * shouldn't become unreadable just because a new store was added later. */
 export async function importAllData(
   db: IDBDatabase,
   data: ExportedData,
-): Promise<{ games: number; moveAnalysis: number; syncState: number; skillSnapshots: number }> {
-  if (data.formatVersion !== 1 && data.formatVersion !== 2) {
+): Promise<{ games: number; moveAnalysis: number; syncState: number; skillSnapshots: number; rivalSnapshots: number }> {
+  if (![1, 2, 3].includes(data.formatVersion)) {
     throw new Error(`Unsupported export format version: ${(data as any).formatVersion}`);
   }
   const snapshots = data.skillSnapshots ?? [];
-  const tx = db.transaction(["games", "moveAnalysis", "syncState", "skillSnapshots"], "readwrite");
+  const rivalSnaps = data.rivalSnapshots ?? [];
+  const tx = db.transaction(["games", "moveAnalysis", "syncState", "skillSnapshots", "rivalSnapshots"], "readwrite");
   const gamesStore = tx.objectStore("games");
   const moveStore = tx.objectStore("moveAnalysis");
   const syncStore = tx.objectStore("syncState");
   const skillStore = tx.objectStore("skillSnapshots");
+  const rivalStore = tx.objectStore("rivalSnapshots");
   for (const g of data.games) gamesStore.put(g);
   for (const m of data.moveAnalysis) moveStore.put(m);
   for (const s of data.syncState) syncStore.put(s);
   for (const s of snapshots) skillStore.put(s);
+  for (const s of rivalSnaps) rivalStore.put(s);
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-  return { games: data.games.length, moveAnalysis: data.moveAnalysis.length, syncState: data.syncState.length, skillSnapshots: snapshots.length };
+  return {
+    games: data.games.length,
+    moveAnalysis: data.moveAnalysis.length,
+    syncState: data.syncState.length,
+    skillSnapshots: snapshots.length,
+    rivalSnapshots: rivalSnaps.length,
+  };
 }

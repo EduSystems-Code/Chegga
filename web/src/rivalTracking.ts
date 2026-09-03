@@ -13,7 +13,7 @@
 // head-to-head doesn't need engine analysis, so it's available immediately
 // after sync, not gated on how many games have been analyzed yet.
 
-import type { GameRecord } from "./db";
+import type { GameRecord, RivalSnapshotEntry } from "./db";
 
 const MIN_RIVAL_GAMES = 2; // matches matchup_service.py's own threshold
 
@@ -91,6 +91,65 @@ export function computeRivalRecords(games: GameRecord[], limit = 20): RivalRecor
 
   records.sort((a, b) => b.games - a.games);
   return records.slice(0, limit);
+}
+
+// --- Since-last-visit delta (critique #9) -------------------------------
+//
+// Rival tracking is a check-back feature — its whole value is "did I gain
+// on them since last time." A stored snapshot per visit + this diff is
+// the check-back hook. All client-side, a plain diff of two snapshots, no
+// new data source.
+
+/** The slim record persisted in a rival snapshot. */
+export function snapshotEntry(r: RivalRecord): RivalSnapshotEntry {
+  return {
+    opponent: r.opponent,
+    games: r.games,
+    wins: r.wins,
+    losses: r.losses,
+    draws: r.draws,
+    winRate: r.winRate,
+    recentAvgOpponentRating: r.recentAvgOpponentRating,
+  };
+}
+
+export interface RivalDelta {
+  opponent: string;
+  newGames: number; // games played against them since the snapshot
+  winsDelta: number;
+  lossesDelta: number;
+  drawsDelta: number;
+  winRateDelta: number; // current.winRate - previous.winRate, -1..1
+  opponentRatingDelta?: number; // change in their recent average rating, if both known
+}
+
+/** Per-rival change between a past snapshot and the current records.
+ * Only rivals present in BOTH snapshots and with at least one new game
+ * are returned — a rival you haven't faced since last visit has nothing
+ * to report. Sorted most-new-games first. */
+export function computeRivalDeltas(current: RivalRecord[], previous: RivalSnapshotEntry[]): RivalDelta[] {
+  const prevByOpponent = new Map(previous.map((p) => [p.opponent, p]));
+  const deltas: RivalDelta[] = [];
+  for (const c of current) {
+    const p = prevByOpponent.get(c.opponent);
+    if (!p) continue;
+    const newGames = c.games - p.games;
+    if (newGames <= 0) continue;
+    deltas.push({
+      opponent: c.opponent,
+      newGames,
+      winsDelta: c.wins - p.wins,
+      lossesDelta: c.losses - p.losses,
+      drawsDelta: c.draws - p.draws,
+      winRateDelta: Math.round((c.winRate - p.winRate) * 1000) / 1000,
+      opponentRatingDelta:
+        c.recentAvgOpponentRating !== undefined && p.recentAvgOpponentRating !== undefined
+          ? c.recentAvgOpponentRating - p.recentAvgOpponentRating
+          : undefined,
+    });
+  }
+  deltas.sort((a, b) => b.newGames - a.newGames);
+  return deltas;
 }
 
 export type RivalInsightTone = "strong" | "even" | "weak" | "neutral";
