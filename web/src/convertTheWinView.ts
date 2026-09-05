@@ -38,12 +38,15 @@ export function renderThrownGames(games: ThrownGame[]): string {
     <p class="tagline" style="margin-bottom:14px">
       ${games.length} game${games.length === 1 ? "" : "s"} where you stood clearly winning and it slipped
       (${losses} became losses). Peak = the best evaluation you reached, in pawns, from your side. Replay each from the
-      slip move — on Chess.com via the link, or use <strong>Redeem a loss</strong> above for the engine-checked version.
+      slip move — on Chess.com via the link, or the engine-checked version here.
     </p>
     <div class="ctw-table-wrap">
       <table class="ctw-table">
         <thead><tr><th>Date</th><th>Type</th><th>Opp.</th><th>Peak</th><th>Result</th><th>Slipped at</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>`;
+    </div>
+    <p class="card-action">
+      <button type="button" data-action='{"kind":"redemption"}'>Redeem one of these losses ↓</button>
+    </p>`;
 }

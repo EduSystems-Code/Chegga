@@ -15,10 +15,15 @@ function slotRow(s: SlotStat, baseline: number): string {
   const delta = s.winRate - baseline;
   const color = delta >= 0.03 ? "#4ade80" : delta <= -0.03 ? "#f2555a" : "#9aa4b6";
   const width = Math.max(4, Math.round(s.winRate * 100));
+  // vs-baseline direction as a word + glyph, so the bar colour is never
+  // the only thing carrying "better/worse than usual".
+  const vsBaseline =
+    delta >= 0.03 ? "▲ above your baseline" : delta <= -0.03 ? "▼ below your baseline" : "≈ at your baseline";
+  const label = `${s.label}: ${pct(s.winRate)} win rate over ${s.games} games, ${vsBaseline}`;
   return `
     <div class="consist-row">
-      <div class="consist-label">${esc(s.label)} <span class="status-line">(${s.games} games${s.blundersPer100 !== undefined ? `, ${s.blundersPer100} blunders/100` : ""})</span></div>
-      <div class="consist-track"><div class="consist-fill" style="width:${width}%;background:${color}"></div><span class="consist-val">${pct(s.winRate)}</span></div>
+      <div class="consist-label">${esc(s.label)} <span class="status-line">(${s.games} games${s.blundersPer100 !== undefined ? `, ${s.blundersPer100} blunders/100` : ""}) · ${vsBaseline}</span></div>
+      <div class="consist-track" role="img" aria-label="${esc(label)}"><div class="consist-fill" style="width:${width}%;background:${color}"></div><span class="consist-val">${pct(s.winRate)}</span></div>
     </div>`;
 }
 

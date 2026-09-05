@@ -29,6 +29,8 @@ import {
   importAllData,
   putSkillSnapshot,
   getSkillSnapshots,
+  putRivalSnapshot,
+  getRivalSnapshots,
   countSyncStatesForUsername,
 } from "./db";
 import type { GameRecord, MoveAnalysisRecord, ExportedData } from "./db";
@@ -116,7 +118,8 @@ import {
   computeFirstMistakePly,
 } from "./gamePatterns";
 import { renderGamePatterns } from "./gamePatternsView";
-import { computeRivalRecords, computeRivalInsights } from "./rivalTracking";
+import { computeRivalRecords, computeRivalInsights, computeRivalDeltas, snapshotEntry } from "./rivalTracking";
+import type { RivalDelta } from "./rivalTracking";
 import { renderRivalTracking } from "./rivalTrackingView";
 import { setupCollapsibleCards, expandCard } from "./collapsibleCards";
 import { setupFeedbackWidget } from "./feedback";
@@ -1307,7 +1310,7 @@ importDataInput.addEventListener("change", async () => {
       const result = await importAllData(db, data);
       setStatus(
         dataIoLog,
-        `Imported ${result.games} games, ${result.moveAnalysis} analyzed moves, ${result.skillSnapshots} progress snapshots. Merged with anything already here.`,
+        `Imported ${result.games} games, ${result.moveAnalysis} analyzed moves, ${result.skillSnapshots} progress snapshots, ${result.rivalSnapshots} rival snapshots. Merged with anything already here.`,
         "ok",
       );
       await refreshProfile();
@@ -1650,6 +1653,18 @@ weeklyPlanOutput.addEventListener("click", (e) => {
     return;
   }
 });
+// Every diagnostic card that names a fix gets a jump button to the tool
+// that trains it (critique #7). Same data-action contract as the growth
+// cards; one delegated handler covers the cards whose innerHTML is
+// replaced wholesale on each load.
+for (const el of [blunderRateOutput, consistencyOutput, convertOutput]) {
+  el.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-action]");
+    if (!btn) return;
+    jumpToGrowthAction(JSON.parse(btn.dataset.action ?? "{}") as { kind: string; phase?: "opening" | "middlegame" | "endgame" });
+  });
+}
+
 weeklyPlanOutput.addEventListener("change", (e) => {
   const box = (e.target as HTMLElement).closest<HTMLInputElement>(".plan-check");
   if (!box) return;
@@ -1748,9 +1763,38 @@ async function refreshProfile() {
   const rivalRecords = computeRivalRecords(allGames);
   const rivalInsights = computeRivalInsights(rivalRecords);
   if (allGames.length) {
+    // Since-last-visit delta (critique #9): diff against the most recent
+    // snapshot from an EARLIER day, then record today's. Upserts on
+    // [username, dateStamp], so re-opening the app the same day just
+    // rewrites today's snapshot rather than erasing the baseline.
+    let rivalDeltas: RivalDelta[] = [];
+    let rivalSinceLabel = "";
+    try {
+      const rdb = await openDb();
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const snaps = await getRivalSnapshots(rdb, currentUsername);
+        const prior = [...snaps].reverse().find((s) => s.dateStamp < today);
+        if (prior) {
+          rivalDeltas = computeRivalDeltas(rivalRecords, prior.records);
+          rivalSinceLabel = new Date(prior.timestamp).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+        }
+        await putRivalSnapshot(rdb, {
+          username: currentUsername,
+          dateStamp: today,
+          timestamp: Date.now(),
+          records: rivalRecords.map(snapshotEntry),
+        });
+      } finally {
+        rdb.close();
+      }
+    } catch {
+      // a snapshot failure must never blank the rivals card -- the table
+      // below still renders from rivalRecords regardless
+    }
     clearEmptyFor("rivals-section");
     rivalsSection.style.display = "";
-    rivalsOutput.innerHTML = renderRivalTracking(rivalRecords, rivalInsights);
+    rivalsOutput.innerHTML = renderRivalTracking(rivalRecords, rivalInsights, rivalDeltas, rivalSinceLabel);
   } else {
     emptyFor("rivals-section");
   }
