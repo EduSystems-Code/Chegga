@@ -865,17 +865,85 @@ td {
   user-select: none;
 }
 
-/* Deliberately much bigger than the 2D board -- the 3D view is meant to
-   dominate the page, not sit as one more equal-sized panel next to the
-   sidebar. .play-layout's existing flex-wrap reflows the sidebar below it
-   automatically once there's no room left beside it -- no separate layout
-   mode needed. The canvas inside (board3d.ts) sizes itself to fill this box. */
-#play-board-3d-wrap {
-  width: min(80vw, 1000px);
-  height: min(75vh, 760px);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+/* The 3D board opens as its own full-screen view (see #play-fullscreen
+   below), not an inline panel -- this dominates the whole viewport
+   instead of sharing space with everything else on the page. */
+.play-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 20px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.play-fullscreen-board {
+  flex: 3 1 600px;
+  min-height: 320px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+}
+
+.play-fullscreen-side {
+  flex: 1 1 300px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.play-fullscreen-side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.play-fullscreen-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+}
+
+.fullscreen-exit-btn {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.play-fullscreen-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.fullscreen-promotion {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.fullscreen-promotion-choices {
+  display: flex;
+  gap: 8px;
+}
+
+.play-fullscreen-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
 }
 
 .play-square {
@@ -1162,9 +1230,17 @@ input[type="range"] {
     padding: 8px;
     display: block;
   }
-  #play-board-3d-wrap {
-    width: min(92vw, 520px);
-    height: min(92vw, 520px);
+  .play-fullscreen {
+    padding: 12px;
+    gap: 12px;
+  }
+  .play-fullscreen-board {
+    flex-basis: 100%;
+    height: min(60vh, 480px);
+  }
+  .play-fullscreen-side {
+    flex-basis: 100%;
+    max-width: none;
   }
   input[type="range"] {
     width: 140px;
