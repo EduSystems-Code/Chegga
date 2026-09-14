@@ -1,14 +1,16 @@
 // Chegga Web — swappable chess piece set.
 //
 // The boards originally rendered pieces as Unicode glyphs only (a
-// deliberate "original art, not reproduced" call). That's now one of
-// three options: two real SVG sets (Cburnett, Merida) bundled from the
-// freely-licensed sets Lichess ships -- see public/piece/COPYING.md for
-// authors + GPLv2+ license -- and the original Unicode glyphs as
-// "Classic". Default is Cburnett. Per-viewer localStorage, same tier as
-// board theme / sound.
+// deliberate "original art, not reproduced" call). Since then: two real
+// SVG sets (Cburnett, Merida) bundled from the freely-licensed sets
+// Lichess ships -- see public/piece/COPYING.md for authors + GPLv2+
+// license -- and a third, "Modern", drawn from scratch for this project
+// (flat geometric primitives, no external source -- see COPYING.md) so
+// there's a set with zero licensing question by construction. Plus the
+// original Unicode glyphs as "Classic". Default is Cburnett. Per-viewer
+// localStorage, same tier as board theme / sound.
 
-export type PieceSetId = "cburnett" | "merida" | "unicode";
+export type PieceSetId = "cburnett" | "merida" | "modern" | "unicode";
 
 const KEY = "chegga-web:piece-set";
 const DEFAULT: PieceSetId = "cburnett";
@@ -16,6 +18,7 @@ const DEFAULT: PieceSetId = "cburnett";
 export const PIECE_SET_OPTIONS: { id: PieceSetId; label: string }[] = [
   { id: "cburnett", label: "Cburnett" },
   { id: "merida", label: "Merida" },
+  { id: "modern", label: "Modern" },
   { id: "unicode", label: "Classic (text)" },
 ];
 
@@ -27,7 +30,7 @@ export const PIECE_GLYPH: Record<string, string> = {
 export function getPieceSet(): PieceSetId {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === "cburnett" || v === "merida" || v === "unicode") return v;
+    if (v === "cburnett" || v === "merida" || v === "modern" || v === "unicode") return v;
   } catch {
     /* ignore */
   }
