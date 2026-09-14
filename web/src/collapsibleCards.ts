@@ -71,6 +71,11 @@ function saveCollapsed(id: string, collapsed: boolean): void {
 export function expandCard(cardId: string): void {
   const card = document.getElementById(cardId);
   if (!card) return;
+  // A card parked behind the front-page "Coming soon" declutter (see
+  // `data-coming-soon` in style.css) is still fully wired underneath --
+  // an explicit deep link (a "Your focus" prescription, a #open= hash,
+  // etc.) should actually land on it, not scroll to something invisible.
+  if (card.dataset.comingSoon) delete card.dataset.comingSoon;
   const body = card.querySelector<HTMLElement>(".card-body");
   const chevron = card.querySelector<HTMLElement>(".card-chevron");
   const heading = card.querySelector<HTMLElement>(".card-heading-collapsible");

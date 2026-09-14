@@ -202,13 +202,10 @@ app.innerHTML = `
 
     <nav class="section-nav" aria-label="Jump to section">
       <a href="#today-section">Today</a>
-      <a href="#weekly-plan-section">Plan</a>
       <a href="#sync-section">Get started</a>
-      <a href="#road-section">Road to rating</a>
       <a href="#profile-section">Profile</a>
-      <a href="#lichess-puzzle-section">Puzzles</a>
       <a href="#play-section">Play</a>
-      <a href="#opening-section">Explore</a>
+      <a href="#coming-soon-section">Coming soon</a>
       <a href="#feedback-form-details">Feedback</a>
     </nav>
 
@@ -262,7 +259,7 @@ app.innerHTML = `
       <div id="focus-output"></div>
     </section>
 
-    <section class="card" id="road-section" data-tier="primary" style="display:none">
+    <section class="card" id="road-section" data-tier="primary" data-coming-soon="true" style="display:none">
       <h2>Road to a target rating</h2>
       <p class="tagline" style="margin-bottom:16px">
         The strength model, run backwards: pick a target and see which parts of your play it thinks are costing you
@@ -271,7 +268,7 @@ app.innerHTML = `
       <div id="road-output"></div>
     </section>
 
-    <section class="card" id="weekly-plan-section" data-tier="primary" style="display:none">
+    <section class="card" id="weekly-plan-section" data-tier="primary" data-coming-soon="true" style="display:none">
       <h2>This week's plan</h2>
       <p class="tagline" style="margin-bottom:16px">
         A seven-day training structure, weighted toward your weakest area, with the numbers filled in from your
@@ -285,7 +282,7 @@ app.innerHTML = `
       <div id="profile-output"></div>
     </section>
 
-    <section class="card" id="puzzle-section" data-tier="primary" style="display:none">
+    <section class="card" id="puzzle-section" data-tier="primary" data-coming-soon="true" style="display:none">
       <h2>Puzzle trainer — your own blunders</h2>
       <p class="tagline" style="margin-bottom:16px">
         Real positions from your own games, right before you made a mistake. Find the move you missed.
@@ -311,7 +308,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="card" id="lichess-puzzle-section" data-tier="primary">
+    <section class="card" id="lichess-puzzle-section" data-tier="primary" data-coming-soon="true">
       <h2>Themed puzzles — tactics library</h2>
       <p class="tagline" style="margin-bottom:16px">
         ~99,000 puzzles from the <a href="https://database.lichess.org" target="_blank" rel="noopener">Lichess open
@@ -432,7 +429,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="card" id="vision-section" data-tier="secondary" style="display:none">
+    <section class="card" id="vision-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Vision trainer — is anything hanging?</h2>
       <p class="tagline" style="margin-bottom:16px">Real positions from your own games. Quick yes/no.</p>
       <div class="play-layout">
@@ -448,7 +445,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="card" id="opening-section" data-tier="secondary" style="display:none">
+    <section class="card" id="opening-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Move explorer</h2>
       <p class="tagline" style="margin-bottom:16px">
         Every line is a move you've made, anywhere in the game — more solid and thicker means you play it more
@@ -461,7 +458,7 @@ app.innerHTML = `
       <div id="opening-output"></div>
     </section>
 
-    <section class="card" id="depth-section" data-tier="secondary" style="display:none">
+    <section class="card" id="depth-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Move-by-move heatmap</h2>
       <p class="tagline" style="margin-bottom:16px">
         Games stacked on top of each other by move number — your 1st move across every game, then your 2nd, and so
@@ -479,17 +476,17 @@ app.innerHTML = `
       <div id="depth-output"></div>
     </section>
 
-    <section class="card" id="achievements-section" data-tier="secondary">
+    <section class="card" id="achievements-section" data-tier="secondary" data-coming-soon="true">
       <h2>Achievements</h2>
       <div id="achievements-output"></div>
     </section>
 
-    <section class="card" id="insights-section" data-tier="secondary" style="display:none">
+    <section class="card" id="insights-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Insights</h2>
       <div id="insights-output" class="insights-list"></div>
     </section>
 
-    <section class="card" id="blunder-rate-section" data-tier="secondary" style="display:none">
+    <section class="card" id="blunder-rate-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Blunder rate over time</h2>
       <p class="tagline" style="margin-bottom:16px">
         One-move oversights per 100 moves — the single biggest rating leak below 2000. Watch this line fall.
@@ -497,7 +494,7 @@ app.innerHTML = `
       <div id="blunder-rate-output"></div>
     </section>
 
-    <section class="card" id="consistency-section" data-tier="secondary" style="display:none">
+    <section class="card" id="consistency-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Consistency &amp; tilt</h2>
       <p class="tagline" style="margin-bottom:16px">
         How your results hold up after a loss and deep into a session — measured from your own game history.
@@ -505,7 +502,7 @@ app.innerHTML = `
       <div id="consistency-output"></div>
     </section>
 
-    <section class="card" id="convert-section" data-tier="secondary" style="display:none">
+    <section class="card" id="convert-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Games you didn't convert</h2>
       <p class="tagline" style="margin-bottom:16px">
         Analyzed games where you reached a clearly winning position and drew or lost it — worst first, with the move
@@ -514,7 +511,7 @@ app.innerHTML = `
       <div id="convert-output"></div>
     </section>
 
-    <section class="card" id="patterns-section" data-tier="secondary" style="display:none">
+    <section class="card" id="patterns-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Game patterns</h2>
       <p class="tagline" style="margin-bottom:16px">
         From every synced game, not just the ones analyzed by the engine — how your games end, your rating over
@@ -523,7 +520,7 @@ app.innerHTML = `
       <div id="patterns-output"></div>
     </section>
 
-    <section class="card" id="rivals-section" data-tier="secondary" style="display:none">
+    <section class="card" id="rivals-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Rivals</h2>
       <p class="tagline" style="margin-bottom:16px">
         Opponents you've faced more than once — your real record against each one, not just a lifetime win rate.
@@ -531,7 +528,7 @@ app.innerHTML = `
       <div id="rivals-output"></div>
     </section>
 
-    <section class="card" id="practice-section" data-tier="secondary">
+    <section class="card" id="practice-section" data-tier="secondary" data-coming-soon="true">
       <h2>Practice positions</h2>
       <p class="tagline" style="margin-bottom:16px">
         Standard endgame technique drills, playable right in the Play vs. bot board — no synced account needed.
@@ -544,6 +541,46 @@ app.innerHTML = `
         <button type="button" id="drill-load-btn">Load drill</button>
       </div>
       <p id="drill-objective" class="status-line"></p>
+    </section>
+
+    <section class="card" id="coming-soon-section">
+      <h2>Coming soon</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        The front page is narrowing to one thing: making game review look and feel better than Chess.com's or
+        Lichess's. Everything below still works in full — it's just parked while that ships.
+      </p>
+      <div class="coming-soon-groups">
+        <div class="coming-soon-group">
+          <h3>Growth &amp; tracking</h3>
+          <ul class="coming-soon-list">
+            <li><strong>Road to a target rating</strong> — the strength model run backwards, by weak area.</li>
+            <li><strong>This week's plan</strong> — a 7-day study checklist, weighted to your weakest skill.</li>
+            <li><strong>Blunder rate over time</strong> — one-move oversights per 100 moves, trending.</li>
+            <li><strong>Consistency &amp; tilt</strong> — win rate after a loss or deep into a session.</li>
+            <li><strong>Games you didn't convert</strong> — winning positions you drew or lost, and where.</li>
+            <li><strong>Insights</strong> — patterns pulled from your analyzed games.</li>
+            <li><strong>Game patterns</strong> — how your games end, rating over time, opponent strength.</li>
+            <li><strong>Rivals</strong> — your real record against opponents you've faced more than once.</li>
+            <li><strong>Achievements</strong> — 22 unlockable badges from real play.</li>
+          </ul>
+        </div>
+        <div class="coming-soon-group">
+          <h3>Training tools</h3>
+          <ul class="coming-soon-list">
+            <li><strong>Puzzle trainer</strong> — real positions from your own blunders.</li>
+            <li><strong>Themed puzzles</strong> — ~99,000 tagged puzzles from the Lichess open database.</li>
+            <li><strong>Vision trainer</strong> — quick yes/no: is anything hanging?</li>
+            <li><strong>Practice positions</strong> — classical endgame technique drills.</li>
+          </ul>
+        </div>
+        <div class="coming-soon-group">
+          <h3>Explore</h3>
+          <ul class="coming-soon-list">
+            <li><strong>Move explorer</strong> — your repertoire, weighted by how often and how well each line goes.</li>
+            <li><strong>Move-by-move heatmap</strong> — every game stacked by move number.</li>
+          </ul>
+        </div>
+      </div>
     </section>
 
     <p class="section-divider">Reference &amp; tools</p>
@@ -1628,6 +1665,7 @@ focusOutput.addEventListener("click", (e) => {
     expandCard("vision-section");
     visionSection.scrollIntoView({ behavior: "smooth", block: "start" });
   } else if (action.kind === "drill") {
+    expandCard("practice-section");
     drillSelect.value = action.drillId;
     drillLoadBtn.click();
     drillSelect.closest("section.card")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2701,6 +2739,7 @@ function onThemedPuzzleResolved(solved: boolean) {
 todayOutput.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
   if (target.id === "today-keep-going") {
+    expandCard("lichess-puzzle-section");
     document.getElementById("lichess-puzzle-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }

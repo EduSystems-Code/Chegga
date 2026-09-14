@@ -308,6 +308,51 @@ section.card[data-tier="secondary"] > h2 {
   padding-top: 16px;
 }
 
+/* Cards parked below the fold while the front page narrows to move-quality
+   review (see context.md, decided 2026-09-14). Fully wired underneath --
+   `!important` beats these cards' own data-driven `style.display` toggles,
+   and expandCard() (collapsibleCards.ts) removes this attribute again for
+   any explicit deep link (a "Your focus" prescription, a #open= hash), so
+   the feature itself is parked, not disabled. */
+[data-coming-soon="true"] {
+  display: none !important;
+}
+
+.coming-soon-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 24px;
+}
+
+.coming-soon-group h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.coming-soon-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coming-soon-list li {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.coming-soon-list strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 form.row {
   display: flex;
   gap: 10px;
@@ -820,11 +865,14 @@ td {
   user-select: none;
 }
 
-/* Same footprint as .play-board so toggling the 3D view doesn't jump the
-   layout. The canvas inside (board3d.ts) sizes itself to fill this box. */
+/* Deliberately much bigger than the 2D board -- the 3D view is meant to
+   dominate the page, not sit as one more equal-sized panel next to the
+   sidebar. .play-layout's existing flex-wrap reflows the sidebar below it
+   automatically once there's no room left beside it -- no separate layout
+   mode needed. The canvas inside (board3d.ts) sizes itself to fill this box. */
 #play-board-3d-wrap {
-  width: 672px;
-  height: 672px;
+  width: min(80vw, 1000px);
+  height: min(75vh, 760px);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -1115,8 +1163,8 @@ input[type="range"] {
     display: block;
   }
   #play-board-3d-wrap {
-    width: min(84vw, 672px);
-    height: min(84vw, 672px);
+    width: min(92vw, 520px);
+    height: min(92vw, 520px);
   }
   input[type="range"] {
     width: 140px;

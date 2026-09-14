@@ -21,6 +21,11 @@ export const BOARD_THEMES: BoardTheme[] = [
   { id: "slate", label: "Slate", light: "#252c3a", dark: "#161a22" },
   { id: "midnight", label: "Midnight blue", light: "#33415c", dark: "#1a2233" },
   { id: "mono", label: "Monochrome", light: "#3a3f4a", dark: "#212530" },
+  { id: "sage", label: "Sage", light: "#dbe5d0", dark: "#5f7a52" },
+  { id: "harbor", label: "Harbor", light: "#d7e3ea", dark: "#3f6a83" },
+  { id: "rosewood", label: "Rosewood", light: "#ecd9d3", dark: "#7a4a42" },
+  { id: "ivory", label: "Ivory & ink", light: "#f5f2ea", dark: "#2b2b2e" },
+  { id: "desert", label: "Desert", light: "#e8d9b5", dark: "#9c6b3e" },
 ];
 
 export function applyBoardTheme(id: string): void {
