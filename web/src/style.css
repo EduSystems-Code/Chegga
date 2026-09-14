@@ -820,6 +820,16 @@ td {
   user-select: none;
 }
 
+/* Same footprint as .play-board so toggling the 3D view doesn't jump the
+   layout. The canvas inside (board3d.ts) sizes itself to fill this box. */
+#play-board-3d-wrap {
+  width: 672px;
+  height: 672px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
 .play-square {
   position: relative;
   display: flex;
@@ -1103,6 +1113,10 @@ input[type="range"] {
   .play-board-wrap {
     padding: 8px;
     display: block;
+  }
+  #play-board-3d-wrap {
+    width: min(84vw, 672px);
+    height: min(84vw, 672px);
   }
   input[type="range"] {
     width: 140px;

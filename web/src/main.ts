@@ -395,6 +395,7 @@ app.innerHTML = `
       <div class="play-controls">
         <label class="play-checkbox-label"><input type="checkbox" id="bot-show-analysis" /> Show live analysis (eval bar + best move)</label>
         <label class="play-checkbox-label"><input type="checkbox" id="bot-show-heatmap" /> Show square control</label>
+        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-3d" /> 🎲 3D board (drag to rotate)</label>
         <label class="play-checkbox-label"><input type="checkbox" id="bot-sound-enabled" checked /> Sound</label>
         <label class="play-checkbox-label"><input type="checkbox" id="fx-enabled" checked /> Effects (confetti, animations)</label>
       </div>
@@ -416,6 +417,7 @@ app.innerHTML = `
       </div>
       <div class="play-layout">
         <div class="play-board-wrap" id="play-board-wrap"></div>
+        <div class="play-board-wrap" id="play-board-3d-wrap" style="display:none"></div>
         <div class="play-sidebar">
           <p id="play-status" class="status-line">Click "New game" to start.</p>
           <p id="play-hang-warning" class="status-line status-error" style="display:none"></p>
@@ -703,6 +705,8 @@ const playHangWarning = document.querySelector<HTMLParagraphElement>("#play-hang
 
 const botShowAnalysisCheckbox = document.querySelector<HTMLInputElement>("#bot-show-analysis")!;
 const botShowHeatmapCheckbox = document.querySelector<HTMLInputElement>("#bot-show-heatmap")!;
+const botShow3dCheckbox = document.querySelector<HTMLInputElement>("#bot-show-3d")!;
+const playBoard3dWrap = document.querySelector<HTMLDivElement>("#play-board-3d-wrap")!;
 const botSoundCheckbox = document.querySelector<HTMLInputElement>("#bot-sound-enabled")!;
 const boardThemeSelect = document.querySelector<HTMLSelectElement>("#board-theme")!;
 const analysisOutput = document.querySelector<HTMLDivElement>("#analysis-output")!;
@@ -734,7 +738,10 @@ fxCheckbox.addEventListener("change", () => {
 });
 
 boardThemeSelect.value = loadSavedBoardTheme();
-boardThemeSelect.addEventListener("change", () => applyBoardTheme(boardThemeSelect.value));
+boardThemeSelect.addEventListener("change", () => {
+  applyBoardTheme(boardThemeSelect.value);
+  board3dInstance?.refreshTheme();
+});
 
 const pieceSetSelect = document.querySelector<HTMLSelectElement>("#piece-set")!;
 pieceSetSelect.value = getPieceSet();
@@ -743,6 +750,7 @@ pieceSetSelect.addEventListener("change", () => {
   // Re-render every board in place so the new set shows without losing
   // any game/puzzle state.
   for (const b of [playBoard, puzzleBoard, lcBoard, redemptionBoard, visionBoard]) b?.redraw();
+  if (playBoard && board3dInstance) board3dInstance.setPosition(playBoard.getFen());
   if (lastOpeningFrequency) renderOpeningSection();
   if (lastDepthFrequency) renderDepthSection();
 });
@@ -856,7 +864,28 @@ async function updateAnalysisPanel(board: PlayBoard) {
 
 function updateHeatmap(board: PlayBoard) {
   board.setHeatmapMode(botShowHeatmapCheckbox.checked ? "control" : "off");
+  void updateBoard3D(board);
 }
+
+// Lazy-loaded the same way the WASM engine and the puzzle JSON are -- three.js
+// stays out of the main bundle until a visitor actually opens the 3D view.
+let board3dInstance: import("./board3d").Board3D | null = null;
+
+async function updateBoard3D(board: PlayBoard) {
+  if (!botShow3dCheckbox.checked) return;
+  if (!board3dInstance) {
+    const { Board3D } = await import("./board3d");
+    board3dInstance = new Board3D(playBoard3dWrap);
+  }
+  board3dInstance.setPosition(board.getFen());
+}
+
+botShow3dCheckbox.addEventListener("change", () => {
+  const on = botShow3dCheckbox.checked;
+  playBoardWrap.style.display = on ? "none" : "";
+  playBoard3dWrap.style.display = on ? "" : "none";
+  if (on && playBoard) void updateBoard3D(playBoard);
+});
 
 async function runPostGameReport(board: PlayBoard) {
   postGameReportSection.style.display = "";
