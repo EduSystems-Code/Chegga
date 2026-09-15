@@ -46,6 +46,9 @@ export class Engine {
   // responding" -- confirmed as the likely real cause, not assumed.
   private failed: string | null = null;
   private pendingRejects: Array<(err: Error) => void> = [];
+  // Serializes analyse() calls on this instance -- see analyse()'s own
+  // comment for why overlapping `go` commands are unsafe.
+  private analysing: Promise<unknown> = Promise.resolve();
 
   constructor() {
     this.worker = new Worker("/engine/stockfish-18-lite-single.js");
@@ -79,11 +82,40 @@ export class Engine {
    * the deepest info line seen for each before `bestmove` arrived (no
    * ready-made InfoDict here — the UCI `info depth ... multipv ... score
    * cp/mate ... pv ...` text has to be hand-parsed).
+   *
+   * Serialized across calls on this instance: sending a new `position`/`go`
+   * before the previous search's `bestmove` has arrived corrupts this
+   * single-threaded WASM build's internal state -- it doesn't reject or
+   * ignore the stray command, it traps ("RuntimeError: unreachable" /
+   * "memory access out of bounds"), confirmed as a real, reported bug in
+   * the underlying engine, not something Chegga's own UCI framing can
+   * work around downstream: https://github.com/nmrugg/stockfish.js/issues/101.
+   * Two callers can race onto the same shared analysisPanel.ts engine (one
+   * right after the human's move, another once the bot's own reply lands)
+   * without this -- confirmed as the live cause of a real production crash
+   * on Safari/WebKit (2026-09-15), reproduced with two moves played in
+   * quick succession while analysis was on.
    */
   async analyse(
     fen: string,
     opts: { depth: number; multipv: number; movetimeMs?: number },
     timeoutMs = 30000,
+  ): Promise<AnalysisLine[]> {
+    const run = this.analysing.then(() => this.runAnalyse(fen, opts, timeoutMs));
+    // However `run` settles, later callers just need to know a slot freed
+    // up -- their own `run` promise (returned below) still carries the
+    // real result or rejection.
+    this.analysing = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async runAnalyse(
+    fen: string,
+    opts: { depth: number; multipv: number; movetimeMs?: number },
+    timeoutMs: number,
   ): Promise<AnalysisLine[]> {
     if (opts.multipv !== this.currentMultipv) {
       this.send(`setoption name MultiPV value ${opts.multipv}`);
