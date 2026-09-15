@@ -392,7 +392,7 @@ app.innerHTML = `
       <div class="play-controls">
         <label class="play-checkbox-label"><input type="checkbox" id="bot-show-analysis" /> Show live analysis (eval bar + best move)</label>
         <label class="play-checkbox-label"><input type="checkbox" id="bot-show-heatmap" /> Show square control</label>
-        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-3d" /> 🎲 3D board (drag to rotate)</label>
+        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-3d" /> 🎲 3D board (full-screen)</label>
         <label class="play-checkbox-label"><input type="checkbox" id="bot-sound-enabled" checked /> Sound</label>
         <label class="play-checkbox-label"><input type="checkbox" id="fx-enabled" checked /> Effects (confetti, animations)</label>
       </div>
@@ -414,7 +414,6 @@ app.innerHTML = `
       </div>
       <div class="play-layout">
         <div class="play-board-wrap" id="play-board-wrap"></div>
-        <div class="play-board-wrap" id="play-board-3d-wrap" style="display:none"></div>
         <div class="play-sidebar">
           <p id="play-status" class="status-line">Click "New game" to start.</p>
           <p id="play-hang-warning" class="status-line status-error" style="display:none"></p>
@@ -428,6 +427,37 @@ app.innerHTML = `
         </div>
       </div>
     </section>
+
+    <!-- 3D board full-screen view. Off the normal page flow (position:fixed
+         in style.css) -- opened by the "3D board" checkbox above, not a
+         separate route. Status/hang-warning/analysis/move-list are the
+         SAME DOM nodes from play-section above, re-parented in and back
+         out (see openFullscreen3D/closeFullscreen3D), so nothing here
+         duplicates their rendering. -->
+    <div id="play-fullscreen" class="play-fullscreen" style="display:none">
+      <div class="play-fullscreen-board" id="play-fullscreen-board"></div>
+      <div class="play-fullscreen-side">
+        <div class="play-fullscreen-side-header">
+          <span class="play-fullscreen-title">Play vs. bot — 3D</span>
+          <button type="button" id="fullscreen-exit-btn" class="fullscreen-exit-btn" aria-label="Exit full-screen 3D view">✕</button>
+        </div>
+        <div class="play-fullscreen-controls">
+          <button type="button" id="fullscreen-new-game-btn">New game</button>
+          <button type="button" id="fullscreen-undo-btn">Undo</button>
+        </div>
+        <p class="tagline" style="margin:0">Drag to rotate, scroll or pinch to zoom, click a piece then a square to move.</p>
+        <div id="fullscreen-promotion" class="fullscreen-promotion" style="display:none">
+          <p class="status-line" style="margin:0 0 8px">Promote to:</p>
+          <div class="fullscreen-promotion-choices">
+            <button type="button" data-promote="q">Queen</button>
+            <button type="button" data-promote="r">Rook</button>
+            <button type="button" data-promote="b">Bishop</button>
+            <button type="button" data-promote="n">Knight</button>
+          </div>
+        </div>
+        <div id="fullscreen-slot" class="play-fullscreen-slot"></div>
+      </div>
+    </div>
 
     <section class="card" id="vision-section" data-tier="secondary" data-coming-soon="true" style="display:none">
       <h2>Vision trainer — is anything hanging?</h2>
@@ -743,7 +773,13 @@ const playHangWarning = document.querySelector<HTMLParagraphElement>("#play-hang
 const botShowAnalysisCheckbox = document.querySelector<HTMLInputElement>("#bot-show-analysis")!;
 const botShowHeatmapCheckbox = document.querySelector<HTMLInputElement>("#bot-show-heatmap")!;
 const botShow3dCheckbox = document.querySelector<HTMLInputElement>("#bot-show-3d")!;
-const playBoard3dWrap = document.querySelector<HTMLDivElement>("#play-board-3d-wrap")!;
+const fullscreenOverlay = document.querySelector<HTMLDivElement>("#play-fullscreen")!;
+const fullscreenBoardSlot = document.querySelector<HTMLDivElement>("#play-fullscreen-board")!;
+const fullscreenSlot = document.querySelector<HTMLDivElement>("#fullscreen-slot")!;
+const fullscreenExitBtn = document.querySelector<HTMLButtonElement>("#fullscreen-exit-btn")!;
+const fullscreenNewGameBtn = document.querySelector<HTMLButtonElement>("#fullscreen-new-game-btn")!;
+const fullscreenUndoBtn = document.querySelector<HTMLButtonElement>("#fullscreen-undo-btn")!;
+const fullscreenPromotion = document.querySelector<HTMLDivElement>("#fullscreen-promotion")!;
 const botSoundCheckbox = document.querySelector<HTMLInputElement>("#bot-sound-enabled")!;
 const boardThemeSelect = document.querySelector<HTMLSelectElement>("#board-theme")!;
 const analysisOutput = document.querySelector<HTMLDivElement>("#analysis-output")!;
@@ -907,21 +943,79 @@ function updateHeatmap(board: PlayBoard) {
 // Lazy-loaded the same way the WASM engine and the puzzle JSON are -- three.js
 // stays out of the main bundle until a visitor actually opens the 3D view.
 let board3dInstance: import("./board3d").Board3D | null = null;
+let fullscreenOpen = false;
+
+function refreshBoard3DSelection(board: PlayBoard) {
+  board3dInstance?.setSelection(board.getSelected(), board.getLegalTargets());
+}
+
+function updatePromotionPicker(board: PlayBoard) {
+  fullscreenPromotion.style.display = board.isPromotionPending() ? "" : "none";
+}
 
 async function updateBoard3D(board: PlayBoard) {
   if (!botShow3dCheckbox.checked) return;
   if (!board3dInstance) {
     const { Board3D } = await import("./board3d");
-    board3dInstance = new Board3D(playBoard3dWrap);
+    board3dInstance = new Board3D(fullscreenBoardSlot, humanColor);
+    board3dInstance.onSquareClick = (square) => {
+      if (!playBoard) return;
+      playBoard.tapSquare(square as Parameters<PlayBoard["tapSquare"]>[0]);
+      refreshBoard3DSelection(playBoard);
+      updatePromotionPicker(playBoard);
+      // A completed (non-promoting) move already flows back here through
+      // PlayBoard's own onPlayerMove -> updateHeatmap -> updateBoard3D --
+      // this just covers the "selected but didn't move" case, which
+      // doesn't fire that callback.
+      board3dInstance?.setPosition(playBoard.getFen());
+    };
   }
+  openFullscreen3D();
   board3dInstance.setPosition(board.getFen());
+  refreshBoard3DSelection(board);
+  updatePromotionPicker(board);
+}
+
+function openFullscreen3D() {
+  if (fullscreenOpen) return;
+  fullscreenOpen = true;
+  fullscreenSlot.append(playStatus, playHangWarning, analysisOutput, playMoveList);
+  fullscreenOverlay.style.display = "flex";
+  document.body.style.overflow = "hidden";
+  board3dInstance?.remount(fullscreenBoardSlot);
+}
+
+function closeFullscreen3D() {
+  if (!fullscreenOpen) return;
+  fullscreenOpen = false;
+  postGameReportSection.before(playStatus, playHangWarning, analysisOutput, playMoveList);
+  fullscreenOverlay.style.display = "none";
+  document.body.style.overflow = "";
 }
 
 botShow3dCheckbox.addEventListener("change", () => {
-  const on = botShow3dCheckbox.checked;
-  playBoardWrap.style.display = on ? "none" : "";
-  playBoard3dWrap.style.display = on ? "" : "none";
-  if (on && playBoard) void updateBoard3D(playBoard);
+  if (botShow3dCheckbox.checked) {
+    if (playBoard) void updateBoard3D(playBoard); // a game's already loaded -- open now; otherwise the next New game/resume opens it
+  } else {
+    closeFullscreen3D();
+  }
+});
+
+fullscreenExitBtn.addEventListener("click", () => {
+  botShow3dCheckbox.checked = false;
+  closeFullscreen3D();
+});
+
+fullscreenNewGameBtn.addEventListener("click", () => botNewGameBtn.click());
+fullscreenUndoBtn.addEventListener("click", () => botUndoBtn.click());
+
+fullscreenPromotion.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-promote]");
+  if (!btn || !playBoard) return;
+  playBoard.choosePromotion(btn.dataset.promote!); // commits the move -> the usual onPlayerMove chain (move list, sound, bot reply) runs from here same as any other move source
+  updatePromotionPicker(playBoard);
+  board3dInstance?.setPosition(playBoard.getFen());
+  refreshBoard3DSelection(playBoard);
 });
 
 async function runPostGameReport(board: PlayBoard) {

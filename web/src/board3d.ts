@@ -161,11 +161,14 @@ export class Board3D {
   // Orbit camera state -- spherical coordinates around the board center,
   // driven by pointer drag. No fixed "front", since the whole point is a
   // free 360° look.
-  private radius = 9;
-  private readonly minRadius = 3.5;
-  private readonly maxRadius = 20;
+  // radius 9 was too close -- the board's corner-to-corner half-diagonal
+  // (~5.66 units) doesn't fit inside a 45° FOV frustum until roughly
+  // radius 13.7 (5.66 / tan(22.5°)); 14 leaves a bit of margin.
+  private radius = 14;
+  private readonly minRadius = 6;
+  private readonly maxRadius = 26;
   private theta = Math.PI / 4; // azimuth
-  private phi = 0.9; // polar angle from +Y
+  private phi = 0.75; // polar angle from +Y -- a bit more overhead than eye-level, so the far side of the board isn't as foreshortened
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
@@ -175,15 +178,31 @@ export class Board3D {
   // so this is one code path, not two.
   private pointers = new Map<number, { x: number; y: number }>();
   private pinchStartDistance = 0;
-  private pinchStartRadius = 9;
+  private pinchStartRadius = 14;
+
+  // A single pointer doesn't start orbiting immediately -- it's a "maybe
+  // a tap" candidate until it moves past TAP_MOVE_PX, mirroring
+  // PlayBoard's own tap-vs-drag threshold. If it never crosses that, it's
+  // a click-to-move square tap instead of a camera drag.
+  private tapCandidate: { pointerId: number; startX: number; startY: number } | null = null;
+  private readonly TAP_MOVE_PX = 6;
+  private raycaster = new THREE.Raycaster();
+  /** Fired with an algebraic square ("e4") when a tap (not a drag) hits a
+   * board square -- set by the caller (main.ts) to drive PlayBoard's
+   * tapSquare(), so this class stays chess-rule-agnostic. */
+  onSquareClick?: (square: string) => void;
 
   private handlePointerDown = (e: PointerEvent) => this.onPointerDown(e);
   private handlePointerMove = (e: PointerEvent) => this.onPointerMove(e);
   private handlePointerUp = (e: PointerEvent) => this.onPointerUp(e);
   private handleWheel = (e: WheelEvent) => this.onWheel(e);
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, orientation: "white" | "black" = "white") {
     this.container = container;
+    // Start looking from the human player's own corner (a1 for White, h8
+    // for Black) -- it's still a free 360° drag from there, just a saner
+    // first frame than an arbitrary angle.
+    this.theta = orientation === "white" ? (5 * Math.PI) / 4 : Math.PI / 4;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -257,6 +276,41 @@ export class Board3D {
     this.render();
   }
 
+  /** Tints the selected square and its legal destinations via each square
+   * mesh's own emissive channel -- doesn't touch `color`, so it composes
+   * cleanly with refreshTheme(). Call after every tapSquare()/onSquareClick
+   * round trip, since selecting (not just moving) changes what should glow. */
+  setSelection(selected: string | null, legalTargets: string[]): void {
+    const legal = new Set(legalTargets);
+    this.squareMeshes.forEach((mesh, i) => {
+      const rank = Math.floor(i / 8);
+      const file = i % 8;
+      const square = `${String.fromCharCode(97 + file)}${rank + 1}`;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (square === selected) {
+        mat.emissive.setHex(0x4a7a3a);
+        mat.emissiveIntensity = 0.7;
+      } else if (legal.has(square)) {
+        mat.emissive.setHex(0x2f5a2f);
+        mat.emissiveIntensity = 0.45;
+      } else {
+        mat.emissive.setHex(0x000000);
+        mat.emissiveIntensity = 0;
+      }
+    });
+    this.render();
+  }
+
+  /** Moves the canvas into a different container (e.g. the small inline
+   * wrap -> the full-screen overlay) without rebuilding the scene. */
+  remount(container: HTMLElement): void {
+    this.container = container;
+    container.appendChild(this.renderer.domElement);
+    this.resizeObserver.disconnect();
+    this.resizeObserver.observe(container);
+    this.resize();
+  }
+
   /** Rebuilds the piece layer from a FEN. Safe to call on every move --
    * geometries and materials are shared/persistent, so this only touches
    * per-instance mesh placement, not the GPU resources behind them. */
@@ -284,12 +338,15 @@ export class Board3D {
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     this.renderer.domElement.setPointerCapture(e.pointerId);
     if (this.pointers.size === 1) {
-      this.dragging = true;
+      // Not a drag yet -- could still resolve to a square tap. Orbiting
+      // only starts once this pointer actually moves (onPointerMove).
+      this.dragging = false;
+      this.tapCandidate = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
       this.lastX = e.clientX;
       this.lastY = e.clientY;
-      this.renderer.domElement.style.cursor = "grabbing";
     } else if (this.pointers.size === 2) {
       this.dragging = false; // a second finger joined -- this is a pinch now, not an orbit drag
+      this.tapCandidate = null;
       this.pinchStartDistance = this.pinchDistance();
       this.pinchStartRadius = this.radius;
     }
@@ -308,6 +365,15 @@ export class Board3D {
       return;
     }
 
+    if (this.tapCandidate && this.tapCandidate.pointerId === e.pointerId) {
+      const dx = e.clientX - this.tapCandidate.startX;
+      const dy = e.clientY - this.tapCandidate.startY;
+      if (Math.hypot(dx, dy) < this.TAP_MOVE_PX) return; // still within tap tolerance -- don't orbit yet
+      this.tapCandidate = null;
+      this.dragging = true;
+      this.renderer.domElement.style.cursor = "grabbing";
+    }
+
     if (!this.dragging) return;
     const dx = e.clientX - this.lastX;
     const dy = e.clientY - this.lastY;
@@ -320,7 +386,10 @@ export class Board3D {
   }
 
   private onPointerUp(e: PointerEvent): void {
+    const wasTap = this.tapCandidate?.pointerId === e.pointerId;
     this.pointers.delete(e.pointerId);
+    this.tapCandidate = null;
+    if (wasTap) this.handleSquareTap(e);
     if (this.pointers.size === 0) {
       this.dragging = false;
       this.renderer.domElement.style.cursor = "grab";
@@ -332,6 +401,26 @@ export class Board3D {
       this.lastY = remaining.y;
       this.dragging = true;
     }
+  }
+
+  /** A completed tap (pointerdown+up with negligible movement) that hit a
+   * board square, translated into an algebraic square and handed to
+   * whoever set onSquareClick. */
+  private handleSquareTap(e: PointerEvent): void {
+    if (!this.onSquareClick) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -(((e.clientY - rect.top) / rect.height) * 2 - 1),
+    );
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hits = this.raycaster.intersectObjects(this.squareMeshes, false);
+    if (hits.length === 0) return;
+    const idx = this.squareMeshes.indexOf(hits[0].object as THREE.Mesh);
+    if (idx < 0) return;
+    const rank = Math.floor(idx / 8);
+    const file = idx % 8;
+    this.onSquareClick(`${String.fromCharCode(97 + file)}${rank + 1}`);
   }
 
   private onWheel(e: WheelEvent): void {

@@ -203,6 +203,36 @@ export class PlayBoard {
     this.render();
   }
 
+  // --- External input sources (the 3D board's raycasted clicks have no
+  // DOM squares of their own to click, so they drive this board's own
+  // click-to-move state machine through these instead of duplicating
+  // chess rules / selection / promotion logic a second time.) ---
+
+  /** Exactly what a click/tap on this square would do: select it, move the
+   * already-selected piece to it, or re-select. */
+  tapSquare(square: Square): void {
+    this.handleTap(square);
+  }
+
+  getSelected(): Square | null {
+    return this.selected;
+  }
+
+  /** Legal destinations from the currently-selected square, or empty if nothing's selected. */
+  getLegalTargets(): Square[] {
+    if (!this.selected) return [];
+    return this.chess.moves({ square: this.selected, verbose: true }).map((m) => m.to as Square);
+  }
+
+  isPromotionPending(): boolean {
+    return this.pendingPromotion !== null;
+  }
+
+  /** Completes a pending promotion. `piece` is "q"|"r"|"b"|"n". */
+  choosePromotion(piece: string): void {
+    this.finishPromotion(piece);
+  }
+
   // --- Drag-and-drop ---
 
   private squareFromPoint(x: number, y: number): Square | null {
