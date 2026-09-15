@@ -37,7 +37,7 @@ import type { GameRecord, MoveAnalysisRecord, ExportedData } from "./db";
 import { Engine } from "./engine";
 import { ChessComClient } from "./chessComClient";
 import { syncGames, quickSyncRecentGames } from "./syncService";
-import { analyzeGame, DEFAULT_ANALYSIS_OPTIONS } from "./engineAnalysis";
+import { analyzeGame, DEFAULT_ANALYSIS_OPTIONS, classify, cpEquivalent, DISPLAY_CLAMP_CP } from "./engineAnalysis";
 import { computeProfile } from "./profileService";
 import { estimateStrength } from "./strengthEstimate";
 import { renderProfile } from "./profileView";
@@ -48,7 +48,8 @@ import { renderTaxonomyBrowser, wireTaxonomyBrowser } from "./pkTaxonomyView";
 import { PlayBoard } from "./playBoard";
 import { chooseBotMove } from "./botEngine";
 import { hasHangingPiece } from "./blunderTagger";
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
+import { getClassColor } from "./classificationColors";
 import {
   accuracyFromCpLoss,
   leakHeadline,
@@ -132,6 +133,7 @@ import {
   bestMoveSquares,
   describeLines,
   getAnalysisEngine,
+  type AnalysisResult,
 } from "./analysisPanel";
 import { analyzeFinishedBotGame, renderPostGameReport, buildAnnotatedPgn, downloadTextFile } from "./postGameReport";
 import {
@@ -899,13 +901,43 @@ function playSoundForSan(san: string) {
   else playMoveSound();
 }
 
+// Cache of the last analyzed position's white-relative eval -- since
+// updateAnalysisPanel() runs after every ply (while the checkbox is on),
+// this is exactly "the eval right before the move about to be classified,"
+// letting live move-quality juice reuse it instead of paying for a
+// second engine call. Cleared whenever a position goes unanalyzed (panel
+// off, or a failed call) so a stale value can't produce a bogus diff.
+let lastPositionEval: { cp: number | undefined; mate: number | undefined } | null = null;
+
+const MOVE_QUALITY_LABELS: Record<string, string> = { best: "Best!", excellent: "Excellent" };
+
+/** Classifies the human move that just landed on `toSquare` (centipawn
+ * loss vs. the pre-move best line, same math as engineAnalysis.ts's
+ * classify()) and flashes the result on whichever boards are live. Only
+ * called for the human's own move -- see updateAnalysisPanel's caller. */
+function applyMoveQualityJuice(board: PlayBoard, toSquare: Square, sideToMoveNow: "white" | "black", after: AnalysisResult) {
+  if (!lastPositionEval) return; // no pre-move eval cached yet (panel just turned on, or game just started)
+  const moverSign = sideToMoveNow === "white" ? -1 : 1; // mover is the side that just moved, i.e. NOT sideToMoveNow
+  const beforeMover = cpEquivalent(lastPositionEval.cp, lastPositionEval.mate) * moverSign;
+  const afterMover = cpEquivalent(after.whiteRelativeCp, after.whiteRelativeMate) * moverSign;
+  const centipawnLoss = Math.min(Math.max(0, beforeMover - afterMover), DISPLAY_CLAMP_CP);
+  const classification = classify(centipawnLoss);
+  const color = getClassColor(classification);
+  board.showMoveQuality(toSquare, color, MOVE_QUALITY_LABELS[classification]);
+  board3dInstance?.flashSquareQuality(toSquare, color);
+  if (classification === "best") confetti(document.getElementById("play-board-wrap"), 0.35);
+}
+
 /** Live analysis: eval bar + best-move arrow + top candidate lines,
  * driven by analysisPanel.ts's own dedicated (always full-strength)
- * engine. No-ops (and clears the arrow) when the checkbox is off. */
-async function updateAnalysisPanel(board: PlayBoard) {
+ * engine. No-ops (and clears the arrow) when the checkbox is off.
+ * `justMovedTo` is passed only from the human's own move -- when set,
+ * this also classifies and juices that move once the fresh eval is in. */
+async function updateAnalysisPanel(board: PlayBoard, justMovedTo?: Square) {
   if (!botShowAnalysisCheckbox.checked) {
     analysisOutput.innerHTML = "";
     board.showArrow(undefined, undefined);
+    lastPositionEval = null;
     return;
   }
   const fen = board.getFen();
@@ -913,6 +945,9 @@ async function updateAnalysisPanel(board: PlayBoard) {
   analysisOutput.innerHTML = `<p class="status-line">Analyzing…</p>`;
   try {
     const result = await analyzePosition(fen, sideToMove);
+    if (justMovedTo) applyMoveQualityJuice(board, justMovedTo, sideToMove, result);
+    lastPositionEval = { cp: result.whiteRelativeCp, mate: result.whiteRelativeMate };
+
     const whiteFraction = evalBarWhiteFraction(result.whiteRelativeCp, result.whiteRelativeMate);
     const lines = describeLines(fen, result);
     const best = bestMoveSquares(result);
@@ -931,6 +966,7 @@ async function updateAnalysisPanel(board: PlayBoard) {
       <div class="eval-lines">${linesHtml}</div>
     `;
   } catch (err: any) {
+    lastPositionEval = null;
     analysisOutput.innerHTML = `<p class="status-line status-error">Analysis failed: ${err.message ?? err}</p>`;
   }
 }
@@ -1139,14 +1175,14 @@ function checkHangWarning(board: PlayBoard) {
 
 function ensurePlayBoard(): PlayBoard {
   if (!playBoard) {
-    playBoard = new PlayBoard(playBoardWrap, (_uci, san) => {
+    playBoard = new PlayBoard(playBoardWrap, (uci, san) => {
       sanHistory.push(san);
       renderMoveList();
       playSoundForSan(san);
       if (!playBoard) return;
       checkHangWarning(playBoard);
       saveBotGame({ pgn: playBoard.getPgn(), humanColor, elo: parseInt(botEloInput.value, 10), savedAt: Date.now() });
-      void updateAnalysisPanel(playBoard).then(() => {
+      void updateAnalysisPanel(playBoard, uci.slice(2, 4) as Square).then(() => {
         if (playBoard) updateHeatmap(playBoard);
       });
       void maybePlayBotMove(playBoard);

@@ -301,6 +301,31 @@ export class Board3D {
     this.render();
   }
 
+  /** Briefly highlights `square` (the destination of the move just
+   * played) via the same emissive-channel technique as setSelection() --
+   * a colored glow that fades back to none. Purely presentational, same
+   * as setSelection(): this class doesn't know or care that `color` came
+   * from a move-quality classification. Safe to assume no square is
+   * selected when this fires (a completed move always clears selection),
+   * so the timeout just clears emissive rather than replaying setSelection. */
+  flashSquareQuality(square: string, color: string, ms = 900): void {
+    const idx = this.squareMeshes.findIndex((_, i) => {
+      const rank = Math.floor(i / 8);
+      const file = i % 8;
+      return `${String.fromCharCode(97 + file)}${rank + 1}` === square;
+    });
+    if (idx < 0) return;
+    const mat = this.squareMeshes[idx].material as THREE.MeshStandardMaterial;
+    mat.emissive.set(new THREE.Color(color));
+    mat.emissiveIntensity = 0.85;
+    this.render();
+    window.setTimeout(() => {
+      mat.emissive.setHex(0x000000);
+      mat.emissiveIntensity = 0;
+      this.render();
+    }, ms);
+  }
+
   /** Moves the canvas into a different container (e.g. the small inline
    * wrap -> the full-screen overlay) without rebuilding the scene. */
   remount(container: HTMLElement): void {

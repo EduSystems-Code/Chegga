@@ -1834,6 +1834,48 @@ input[type="range"] {
 .today-dot-on { animation: today-dot-pop 0.32s ease; }
 .today-item-done .today-item-label { text-decoration: line-through; text-decoration-color: var(--muted); }
 
+/* Live move-quality flash (playBoard.ts's showMoveQuality, board3d.ts's
+   flashSquareQuality) -- the destination square of the move just played,
+   colored via classificationColors.ts's getClassColor(). The label stays
+   inside the square's own bounds (not above it) since .play-board clips
+   overflow and this needs to read correctly on a back-rank square too. */
+.play-quality-ring {
+  position: absolute;
+  inset: 2px;
+  border-radius: 4px;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px var(--quality-color), 0 0 14px 2px var(--quality-color);
+  animation: play-quality-ring-anim 1.1s ease-out forwards;
+}
+@keyframes play-quality-ring-anim {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.play-quality-label {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  background: var(--quality-color);
+  color: #14170f;
+  font-weight: 700;
+  font-size: 0.6rem;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 999px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+  animation: play-quality-label-anim 1.1s ease-out forwards;
+}
+@keyframes play-quality-label-anim {
+  0% { opacity: 0; transform: scale(0.6); }
+  20% { opacity: 1; transform: scale(1.08); }
+  30% { transform: scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* Global press feedback — cheap, kills the "static" feel */
 button:active { transform: scale(0.96); }
 button { transition: transform 0.08s ease, background 0.15s ease, color 0.15s ease; }
@@ -1844,6 +1886,7 @@ section.card[data-tier="primary"]:hover { transform: translateY(-1px); }
   .juice-bump, .juice-shake,
   .juice-flash-good, .juice-flash-bad, .juice-flash-gold,
   .today-dot-on, .juice-screen-glow { animation: none; }
+  .play-quality-ring, .play-quality-label { animation: none; opacity: 1; transform: none; }
   .juice-banner { transition: opacity 0.2s ease; transform: none; opacity: 0; }
   .juice-banner-in { opacity: 1; }
   button:active { transform: none; }

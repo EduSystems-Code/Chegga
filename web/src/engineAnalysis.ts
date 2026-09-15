@@ -22,8 +22,8 @@ import { clocksByFen } from "./clockParser";
 import { tagMove } from "./blunderTagger";
 import { bandFor } from "./timePressure";
 
-const MATE_SCORE_CP = 100_000;
-const DISPLAY_CLAMP_CP = 1000; // caps mate-adjacent blowups so a single move can't dominate a chart
+export const MATE_SCORE_CP = 100_000;
+export const DISPLAY_CLAMP_CP = 1000; // caps mate-adjacent blowups so a single move can't dominate a chart
 
 // Our own explicit, tunable convention — there is no industry-standard
 // definition of these labels. Centipawn loss thresholds, mover's
@@ -60,10 +60,17 @@ export function gamePhase(ply: number, board: Chess): "opening" | "middlegame" |
  * `score.score(mate_score=MATE_SCORE_CP)`, which substitutes a large
  * magnitude for "mate in N" so cp math never has to special-case it (the
  * later clamp to DISPLAY_CLAMP_CP means the exact magnitude doesn't
- * matter, only the sign and that it dwarfs any real cp value). */
+ * matter, only the sign and that it dwarfs any real cp value). Exported
+ * so any other cp/mate pair already in white-relative form (e.g.
+ * analysisPanel.ts's live eval) can feed the same substitution without
+ * going through an AnalysisLine. */
+export function cpEquivalent(cp: number | undefined, mate: number | undefined): number {
+  return mate !== undefined ? Math.sign(mate || 1) * MATE_SCORE_CP : (cp ?? 0);
+}
+
 function toWhiteRelativeCp(line: AnalysisLine | undefined, sideToMoveAtLine: "white" | "black"): number {
   if (!line) return 0;
-  const raw = line.scoreMate !== undefined ? Math.sign(line.scoreMate || 1) * MATE_SCORE_CP : (line.scoreCp ?? 0);
+  const raw = cpEquivalent(line.scoreCp, line.scoreMate);
   return sideToMoveAtLine === "white" ? raw : -raw;
 }
 

@@ -20,6 +20,7 @@
 
 import { Chess, type Square } from "chess.js";
 import { playPieceHtml, pieceImgUrl, PIECE_GLYPH } from "./pieceSet";
+import { effectsEnabled } from "./juice";
 
 const SELECTED_COLOR = "#3a4a2e";
 const LAST_MOVE_COLOR = "rgba(227, 168, 87, 0.18)";
@@ -57,6 +58,8 @@ export class PlayBoard {
   private drag: DragState | null = null;
   private arrow: { from: Square; to: Square } | null = null;
   private heatmapMode: HeatmapMode = "off";
+  private qualityFlash: { square: Square; color: string; label?: string } | null = null;
+  private qualityFlashTimeout: number | null = null;
   // Browsers fire a synthetic `click` right after `pointerup` even when
   // the pointerdown->pointerup pair was a real drag, not a tap -- this
   // suppresses that one click so a completed drag doesn't also run the
@@ -94,6 +97,7 @@ export class PlayBoard {
     this.pendingPromotion = null;
     this.drag = null;
     this.arrow = null;
+    this.clearQualityFlash();
     const sideToMove = this.chess.turn() === "w" ? "white" : "black";
     this.locked = sideToMove !== orientation;
     this.render();
@@ -111,6 +115,7 @@ export class PlayBoard {
     this.pendingPromotion = null;
     this.drag = null;
     this.arrow = null;
+    this.clearQualityFlash();
     const history = this.chess.history({ verbose: true });
     const last = history[history.length - 1];
     this.lastMove = last ? { from: last.from, to: last.to } : null;
@@ -171,6 +176,7 @@ export class PlayBoard {
     this.selected = null;
     this.pendingPromotion = null;
     this.arrow = null;
+    this.clearQualityFlash();
     const history = this.chess.history({ verbose: true });
     const last = history[history.length - 1];
     this.lastMove = last ? { from: last.from, to: last.to } : null;
@@ -201,6 +207,33 @@ export class PlayBoard {
   setHeatmapMode(mode: HeatmapMode): void {
     this.heatmapMode = mode;
     this.render();
+  }
+
+  /** Briefly highlights `square` (the destination of a move just played)
+   * with a move-quality color, e.g. from classificationColors.ts's
+   * getClassColor() — this board doesn't know or care what the color
+   * means, same as showArrow() not knowing about engine lines. `label`
+   * (e.g. "Best!") is shown for tiers worth calling out; omit it for a
+   * plain color pulse. Respects the effects-off / reduced-motion
+   * preferences juice.ts's own effects already do. */
+  showMoveQuality(square: Square, color: string, label?: string, ms = 1100): void {
+    this.clearQualityFlash();
+    if (!effectsEnabled()) return;
+    this.qualityFlash = { square, color, label };
+    this.render();
+    this.qualityFlashTimeout = window.setTimeout(() => {
+      this.qualityFlash = null;
+      this.qualityFlashTimeout = null;
+      this.render();
+    }, ms);
+  }
+
+  private clearQualityFlash(): void {
+    if (this.qualityFlashTimeout !== null) {
+      window.clearTimeout(this.qualityFlashTimeout);
+      this.qualityFlashTimeout = null;
+    }
+    this.qualityFlash = null;
   }
 
   // --- External input sources (the 3D board's raycasted clicks have no
@@ -479,12 +512,15 @@ export class PlayBoard {
         // the ghost follows the cursor -- the same convention chess.com
         // uses rather than leaving a hard gap on the board.
         const pieceHtml = piece ? playPieceHtml(piece.color, piece.type, { dim: square === isDraggingFrom }) : "";
+        const quality = this.qualityFlash?.square === square ? this.qualityFlash : null;
 
         squaresHtml += `
           <div class="play-square" data-square="${square}" style="background:${bg}">
             ${tint ? `<span class="play-heatmap-tint" style="background:${tint}"></span>` : ""}
             ${pieceHtml}
             ${dot}
+            ${quality ? `<span class="play-quality-ring" style="--quality-color:${quality.color}"></span>` : ""}
+            ${quality?.label ? `<span class="play-quality-label" style="--quality-color:${quality.color}">${quality.label}</span>` : ""}
           </div>`;
       }
     }
