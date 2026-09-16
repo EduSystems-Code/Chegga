@@ -105,9 +105,18 @@ export function setupCollapsibleCards(): void {
 
     const body = document.createElement("div");
     body.className = "card-body";
-    // Move every sibling after the heading into the body wrapper.
-    while (heading.nextSibling) {
-      body.appendChild(heading.nextSibling);
+    // Move every sibling after the heading into the body wrapper, except
+    // one explicitly marked `data-card-teaser` element (if present) --
+    // that one stays outside the collapsed body so a card can show a
+    // one-line hook even while closed, instead of a bare header with
+    // nothing to say why you'd open it (e.g. "Coming soon").
+    let sibling = heading.nextSibling;
+    while (sibling) {
+      const next = sibling.nextSibling;
+      if (!(sibling instanceof HTMLElement && sibling.hasAttribute("data-card-teaser"))) {
+        body.appendChild(sibling);
+      }
+      sibling = next;
     }
     card.appendChild(body);
 

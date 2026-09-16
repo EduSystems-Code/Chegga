@@ -7,18 +7,21 @@
 // license -- and a third, "Modern", drawn from scratch for this project
 // (flat geometric primitives, no external source -- see COPYING.md) so
 // there's a set with zero licensing question by construction. Plus the
-// original Unicode glyphs as "Classic". Default is Cburnett. Per-viewer
-// localStorage, same tier as board theme / sound.
+// original Unicode glyphs as "Classic". Default is Modern, not Cburnett
+// -- Cburnett is the exact default Lichess ships, so a fresh visitor's
+// pieces looked identical to every other site's (2026-08-29 critique
+// #7); Modern is the one set built specifically to give Chegga its own
+// look. Per-viewer localStorage, same tier as board theme / sound.
 
 export type PieceSetId = "cburnett" | "merida" | "modern" | "unicode";
 
 const KEY = "chegga-web:piece-set";
-const DEFAULT: PieceSetId = "cburnett";
+const DEFAULT: PieceSetId = "modern";
 
 export const PIECE_SET_OPTIONS: { id: PieceSetId; label: string }[] = [
+  { id: "modern", label: "Modern (default)" },
   { id: "cburnett", label: "Cburnett" },
   { id: "merida", label: "Merida" },
-  { id: "modern", label: "Modern" },
   { id: "unicode", label: "Classic (text)" },
 ];
 

@@ -184,29 +184,29 @@ app.innerHTML = `
           <rect x="42" y="42" width="10" height="10" fill="#e3a857" />
           <rect x="12" y="12" width="40" height="40" fill="none" stroke="#f0be73" stroke-width="2" />
         </svg>
-        <h1><span class="text-accent">Chegga</span> Web</h1>
+        <h1><span class="text-accent">Chegga</span></h1>
       </div>
       <button type="button" id="feedback-btn" class="feedback-btn" hidden>Feedback</button>
     </header>
 
     <section class="hero" aria-labelledby="hero-title">
-      <h2 id="hero-title">The patterns in your chess that a single game review can't show you.</h2>
+      <h2 id="hero-title">See how good each move was, the moment you make it.</h2>
       <p>
-        Connect your Chess.com username and every game you've ever played is analyzed right here in your
-        browser — your real opening results, the mistake you keep making, where time pressure costs you.
-        Nothing is uploaded.
+        Play a real Stockfish opponent right in your browser — every move gets graded and stands out
+        instantly, from a quiet good move to a real "best move" moment. No account needed. Want the deeper
+        view? Connect your Chess.com username and every game you've played gets the same treatment.
       </p>
       <div class="hero-cta">
-        <button type="button" id="hero-analyze-btn">Analyze my games</button>
-        <button type="button" id="hero-play-btn" class="btn-ghost">Play a bot instead</button>
+        <button type="button" id="hero-play-btn">Play a bot</button>
+        <button type="button" id="hero-analyze-btn" class="btn-ghost">Analyze my games instead</button>
       </div>
     </section>
 
     <nav class="section-nav" aria-label="Jump to section">
       <a href="#today-section">Today</a>
+      <a href="#play-section">Play</a>
       <a href="#sync-section">Get started</a>
       <a href="#profile-section">Profile</a>
-      <a href="#play-section">Play</a>
       <a href="#coming-soon-section">Coming soon</a>
       <a href="#feedback-form-details">Feedback</a>
     </nav>
@@ -219,6 +219,76 @@ app.innerHTML = `
         want; nothing here is locked.
       </p>
       <div id="today-output"></div>
+    </section>
+
+    <section class="card" id="play-section" data-tier="primary">
+      <h2>Play vs. bot</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        A real Stockfish opponent, scaled anywhere from 100 to 3000 Elo — runs entirely in your browser, no account
+        needed.
+      </p>
+      <div class="play-controls play-controls-primary">
+        <label for="bot-elo">Bot strength</label>
+        <input type="range" id="bot-elo" min="100" max="3000" step="10" value="800" />
+        <span id="bot-elo-value" class="play-elo-value">800 Elo</span>
+        <label for="bot-color">Play as</label>
+        <select id="bot-color">
+          <option value="white">White</option>
+          <option value="black">Black</option>
+        </select>
+        <button type="button" id="bot-new-game-btn">New game</button>
+        <button type="button" id="bot-undo-btn">Undo</button>
+      </div>
+      <div id="resume-banner" class="status-line status-ok" style="display:none">
+        You have a game in progress.
+        <button type="button" id="resume-btn">Resume it</button>
+        <button type="button" id="discard-resume-btn">Discard</button>
+      </div>
+      <div class="play-layout">
+        <div class="play-board-wrap" id="play-board-wrap"></div>
+        <div class="play-sidebar">
+          <p id="play-status" class="status-line">Click "New game" to start.</p>
+          <p id="play-hang-warning" class="status-line status-error" style="display:none"></p>
+          <div id="analysis-output"></div>
+          <div id="play-move-list" class="play-move-list"></div>
+          <div id="post-game-report" style="display:none">
+            <h3>Game report</h3>
+            <div id="post-game-report-output"></div>
+            <button type="button" id="download-pgn-btn">Download annotated PGN</button>
+          </div>
+        </div>
+      </div>
+      <div class="play-controls">
+        <span class="control-pair"><label for="bot-odds">Handicap</label>
+        <select id="bot-odds">
+          ${ODDS_OPTIONS.map((o) => `<option value="${o.value}">${o.label}</option>`).join("")}
+        </select></span>
+        <label class="play-checkbox-label"><input type="checkbox" id="bot-hang-warning" /> Warn me about hanging pieces</label>
+        <span class="control-pair"><label for="hang-sensitivity">Hang-detection sensitivity</label>
+        <select id="hang-sensitivity">
+          <option value="5">Beginner (queen/rook only)</option>
+          <option value="3">Intermediate (+ bishop/knight)</option>
+          <option value="1" selected>Advanced (+ pawns)</option>
+        </select></span>
+      </div>
+      <div class="play-controls">
+        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-analysis" checked /> Show live analysis (eval bar + best move + move-quality juice)</label>
+        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-heatmap" /> Show square control</label>
+        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-3d" /> 🎲 3D board (full-screen)</label>
+        <label class="play-checkbox-label"><input type="checkbox" id="bot-sound-enabled" checked /> Sound</label>
+        <label class="play-checkbox-label"><input type="checkbox" id="fx-enabled" checked /> Effects (confetti, animations)</label>
+      </div>
+      <div class="play-controls">
+        <span class="control-pair"><label for="board-theme">Board theme</label>
+        <select id="board-theme">
+          ${BOARD_THEMES.map((t) => `<option value="${t.id}">${t.label}</option>`).join("")}
+        </select></span>
+        <span class="control-pair"><label for="piece-set">Pieces</label>
+        <select id="piece-set">
+          ${PIECE_SET_OPTIONS.map((o) => `<option value="${o.id}">${o.label}</option>`).join("")}
+        </select></span>
+        <label class="play-checkbox-label"><input type="checkbox" id="colorblind-palette" /> Colorblind-safe move colors</label>
+      </div>
     </section>
 
     <section class="card" id="sync-section" data-tier="primary">
@@ -358,76 +428,6 @@ app.innerHTML = `
         </div>
       </div>
       <div id="redemption-output"></div>
-    </section>
-
-    <section class="card" id="play-section" data-tier="primary">
-      <h2>Play vs. bot</h2>
-      <p class="tagline" style="margin-bottom:16px">
-        A real Stockfish opponent, scaled anywhere from 100 to 3000 Elo — runs entirely in your browser, no account
-        needed.
-      </p>
-      <div class="play-controls">
-        <label for="bot-elo">Bot strength</label>
-        <input type="range" id="bot-elo" min="100" max="3000" step="10" value="800" />
-        <span id="bot-elo-value" class="play-elo-value">800 Elo</span>
-        <label for="bot-color">Play as</label>
-        <select id="bot-color">
-          <option value="white">White</option>
-          <option value="black">Black</option>
-        </select>
-        <button type="button" id="bot-new-game-btn">New game</button>
-        <button type="button" id="bot-undo-btn">Undo</button>
-      </div>
-      <div class="play-controls">
-        <label for="bot-odds">Handicap</label>
-        <select id="bot-odds">
-          ${ODDS_OPTIONS.map((o) => `<option value="${o.value}">${o.label}</option>`).join("")}
-        </select>
-        <label class="play-checkbox-label"><input type="checkbox" id="bot-hang-warning" /> Warn me about hanging pieces</label>
-        <label for="hang-sensitivity">Hang-detection sensitivity</label>
-        <select id="hang-sensitivity">
-          <option value="5">Beginner (queen/rook only)</option>
-          <option value="3">Intermediate (+ bishop/knight)</option>
-          <option value="1" selected>Advanced (+ pawns)</option>
-        </select>
-      </div>
-      <div class="play-controls">
-        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-analysis" /> Show live analysis (eval bar + best move)</label>
-        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-heatmap" /> Show square control</label>
-        <label class="play-checkbox-label"><input type="checkbox" id="bot-show-3d" /> 🎲 3D board (full-screen)</label>
-        <label class="play-checkbox-label"><input type="checkbox" id="bot-sound-enabled" checked /> Sound</label>
-        <label class="play-checkbox-label"><input type="checkbox" id="fx-enabled" checked /> Effects (confetti, animations)</label>
-      </div>
-      <div class="play-controls">
-        <label for="board-theme">Board theme</label>
-        <select id="board-theme">
-          ${BOARD_THEMES.map((t) => `<option value="${t.id}">${t.label}</option>`).join("")}
-        </select>
-        <label for="piece-set">Pieces</label>
-        <select id="piece-set">
-          ${PIECE_SET_OPTIONS.map((o) => `<option value="${o.id}">${o.label}</option>`).join("")}
-        </select>
-        <label class="play-checkbox-label"><input type="checkbox" id="colorblind-palette" /> Colorblind-safe move colors</label>
-      </div>
-      <div id="resume-banner" class="status-line status-ok" style="display:none">
-        You have a game in progress.
-        <button type="button" id="resume-btn">Resume it</button>
-        <button type="button" id="discard-resume-btn">Discard</button>
-      </div>
-      <div class="play-layout">
-        <div class="play-board-wrap" id="play-board-wrap"></div>
-        <div class="play-sidebar">
-          <p id="play-status" class="status-line">Click "New game" to start.</p>
-          <p id="play-hang-warning" class="status-line status-error" style="display:none"></p>
-          <div id="analysis-output"></div>
-          <div id="play-move-list" class="play-move-list"></div>
-          <div id="post-game-report" style="display:none">
-            <h3>Game report</h3>
-            <div id="post-game-report-output"></div>
-            <button type="button" id="download-pgn-btn">Download annotated PGN</button>
-          </div>
-        </div>
-      </div>
     </section>
 
     <!-- 3D board full-screen view. Off the normal page flow (position:fixed
@@ -577,6 +577,10 @@ app.innerHTML = `
 
     <section class="card" id="coming-soon-section">
       <h2>Coming soon</h2>
+      <p class="card-teaser" data-card-teaser>
+        15 already-built features are parked here for now — puzzle trainer, rival tracking, 22 achievements,
+        and more.
+      </p>
       <p class="tagline" style="margin-bottom:16px">
         The front page is narrowing to one thing: making game review look and feel better than Chess.com's or
         Lichess's. Everything below still works in full — it's just parked while that ships.
@@ -707,6 +711,15 @@ document.getElementById("hero-analyze-btn")?.addEventListener("click", () => {
 document.getElementById("hero-play-btn")?.addEventListener("click", () => {
   expandCard("play-section");
   document.getElementById("play-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+// Post-game report's "connect your real games" link -- delegated on the
+// stable report container since the link itself is re-rendered fresh
+// (renderPostGameReport) every time a bot game finishes.
+document.getElementById("post-game-report")?.addEventListener("click", (e) => {
+  if (!(e.target as HTMLElement).closest("#post-game-connect-link")) return;
+  e.preventDefault();
+  document.getElementById("sync-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.setTimeout(() => document.getElementById("username")?.focus(), 400);
 });
 wireTaxonomyBrowser(document.querySelector<HTMLElement>("#pk-taxonomy-root")!, (_code, themes, nodeName) => {
   practiceLichessThemes(themes, nodeName);

@@ -84,6 +84,10 @@ export function renderPostGameReport(report: PostGameReport): string {
       <div class="stat-card"><div class="stat-value">${report.mistakeCount}</div><div class="stat-label">mistakes</div></div>
     </div>
     ${worst}
+    <p class="status-line" style="margin-top:12px">
+      Want this for your real games too?
+      <a href="#sync-section" id="post-game-connect-link">Connect your Chess.com username</a>.
+    </p>
   `;
 }
 

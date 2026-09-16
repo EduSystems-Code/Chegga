@@ -253,6 +253,15 @@ textarea:focus-visible,
   margin: 0 0 32px;
 }
 
+/* Stays visible even while its card is collapsed (collapsibleCards.ts's
+   data-card-teaser exception) -- a one-line hook for why to open it. */
+.card-teaser {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+
 .text-accent {
   color: var(--accent-strong);
 }
@@ -1049,6 +1058,14 @@ td {
   gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 16px;
+}
+/* A label and its control wrap together as one unit when the row runs
+   out of width, instead of each being its own flex item that can land
+   on a different line than its own label. */
+.control-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .play-elo-value {
   font-family: var(--font-mono);
