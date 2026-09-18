@@ -97,7 +97,13 @@ export async function analyzeGame(
   const clockByFen = clocksByFen(pgnGame.getComments());
   const sanMoves = pgnGame.history();
 
-  const board = new Chess();
+  // Not every game starts from the standard position — a handicap/odds bot
+  // game and a Chess.com "from position" game both carry their own start in
+  // the PGN's FEN header (chess.js writes FEN + SetUp whenever a game didn't
+  // begin from the normal setup). Replaying such a game from the standard
+  // start throws on the first move that is only legal in the real position.
+  const pgnStartFen = pgnGame.getHeaders().FEN;
+  const board = pgnStartFen ? new Chess(pgnStartFen) : new Chess();
   const boardsByPly: Chess[] = [new Chess(board.fen())];
   const positionsInfo: AnalysisLine[][] = [await engine.analyse(board.fen(), opts)];
 
@@ -123,8 +129,21 @@ export async function analyzeGame(
 
     const afterSideToMove: "white" | "black" = sideToMove === "white" ? "black" : "white";
     const afterLine = positionsInfo[i + 1][0];
-    const afterCpWhite = toWhiteRelativeCp(afterLine, afterSideToMove);
-    const afterMateWhite = whiteRelativeMate(afterLine, afterSideToMove);
+    // A checkmated position has no legal moves, so the engine reports no
+    // line for it at all. Reading that absence as "eval 0" made every
+    // checkmating move look like it threw away a won game -- a delivered
+    // mate graded as a 1000cp blunder, in the report, the annotated PGN and
+    // every synced game's stats. The side to move in that position is the
+    // side that got mated, so the mover won: score it as the mate it is.
+    // A position with no line that isn't mate (stalemate, an insufficient-
+    // material draw) really is 0 — a winning player who stalemates did lose
+    // the win, and should be graded as having lost it.
+    const afterCpWhite = afterLine
+      ? toWhiteRelativeCp(afterLine, afterSideToMove)
+      : boardsByPly[i + 1].isCheckmate()
+        ? moverSign * MATE_SCORE_CP
+        : 0;
+    const afterMateWhite = afterLine ? whiteRelativeMate(afterLine, afterSideToMove) : undefined;
 
     const bestBeforeMover = bestCpWhite * moverSign;
     const actualAfterMover = afterCpWhite * moverSign;
