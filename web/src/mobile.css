@@ -277,6 +277,27 @@ body {
     width: 16px;
     height: 16px;
   }
+
+  /* Game review: the step buttons are a primary control here, so they get
+     the same 44px tap target as the other steppers. The timeline chips
+     stay small — a 44px chip would be a wall of blocks on a phone — but
+     get more width and spacing so a thumb can still land on one. */
+  .review-buttons button {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+  .review-strip {
+    gap: 5px;
+    max-height: 120px;
+  }
+  .review-chip-mine {
+    width: 12px;
+    height: 26px;
+  }
+  .review-chip-theirs {
+    width: 12px;
+    height: 10px;
+  }
 }
 
 /* ---- PK taxonomy browser --------------------------- */

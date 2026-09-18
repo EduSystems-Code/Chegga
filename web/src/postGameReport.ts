@@ -53,7 +53,14 @@ function buildSyntheticGame(pgn: string, humanColor: "white" | "black"): GameRec
   };
 }
 
-export async function analyzeFinishedBotGame(pgn: string, humanColor: "white" | "black"): Promise<PostGameReport> {
+/** The per-move records come back alongside the report because every
+ * consumer needs them: the annotated PGN and the move-by-move review are
+ * both built from the same rows. Engine analysis is the expensive part of
+ * a finished game (one pass per position), so it runs exactly once. */
+export async function analyzeFinishedBotGame(
+  pgn: string,
+  humanColor: "white" | "black",
+): Promise<{ report: PostGameReport; moves: MoveAnalysisRecord[] }> {
   const engine = await getAnalysisEngine();
   const game = buildSyntheticGame(pgn, humanColor);
   const moves = await analyzeGame(engine, game, DEFAULT_ANALYSIS_OPTIONS);
@@ -63,12 +70,15 @@ export async function analyzeFinishedBotGame(pgn: string, humanColor: "white" | 
   const worstMove = [...ownMoves].sort((a, b) => b.centipawnLoss - a.centipawnLoss)[0];
 
   return {
-    accuracy: accuracyFromCpLoss(profile.avgCentipawnLoss),
-    avgCentipawnLoss: profile.avgCentipawnLoss,
-    totalMoves: profile.totalMoves,
-    blunderCount: profile.classificationCounts.blunder ?? 0,
-    mistakeCount: profile.classificationCounts.mistake ?? 0,
-    worstMove,
+    report: {
+      accuracy: accuracyFromCpLoss(profile.avgCentipawnLoss),
+      avgCentipawnLoss: profile.avgCentipawnLoss,
+      totalMoves: profile.totalMoves,
+      blunderCount: profile.classificationCounts.blunder ?? 0,
+      mistakeCount: profile.classificationCounts.mistake ?? 0,
+      worstMove,
+    },
+    moves,
   };
 }
 

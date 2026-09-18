@@ -132,10 +132,18 @@ import {
   formatEval,
   bestMoveSquares,
   describeLines,
-  getAnalysisEngine,
   type AnalysisResult,
 } from "./analysisPanel";
 import { analyzeFinishedBotGame, renderPostGameReport, buildAnnotatedPgn, downloadTextFile } from "./postGameReport";
+import {
+  buildReview,
+  describeStep,
+  shouldShowBetterMove,
+  worstHumanStepIndex,
+  REVIEW_QUALITY_LABELS,
+  type ReviewGame,
+} from "./gameReview";
+import { renderReviewStrip, renderQualityTally } from "./gameReviewView";
 import {
   playMoveSound,
   playCaptureSound,
@@ -247,6 +255,25 @@ app.innerHTML = `
       <div class="play-layout">
         <div class="play-board-wrap" id="play-board-wrap"></div>
         <div class="play-sidebar">
+          <!-- The review sits at the top of the sidebar so it lands beside
+               the board on a wide screen and directly under it on a narrow
+               one -- never several hundred pixels below the position it is
+               describing. Hidden until a game is reviewed. -->
+          <div id="review-panel" style="display:none">
+            <h3 class="review-heading">Game review</h3>
+            <div id="review-strip-host"></div>
+            <p id="review-caption" class="review-caption"></p>
+            <div class="review-buttons">
+              <button type="button" id="review-first" aria-label="Jump to the starting position">⏮</button>
+              <button type="button" id="review-prev" aria-label="Previous move">◀</button>
+              <button type="button" id="review-next" aria-label="Next move">▶</button>
+              <button type="button" id="review-last" aria-label="Jump to the last move">⏭</button>
+              <button type="button" id="review-autoplay" class="btn-ghost">▶ Play it back</button>
+              <button type="button" id="review-worst" class="btn-ghost">Your worst move</button>
+            </div>
+            <p class="tagline review-hint">Arrow keys step through it too.</p>
+            <div id="review-tally"></div>
+          </div>
           <p id="play-status" class="status-line">Click "New game" to start.</p>
           <p id="play-hang-warning" class="status-line status-error" style="display:none"></p>
           <div id="analysis-output"></div>
@@ -802,6 +829,9 @@ const resumeBanner = document.querySelector<HTMLDivElement>("#resume-banner")!;
 const resumeBtn = document.querySelector<HTMLButtonElement>("#resume-btn")!;
 const discardResumeBtn = document.querySelector<HTMLButtonElement>("#discard-resume-btn")!;
 const postGameReportSection = document.querySelector<HTMLDivElement>("#post-game-report")!;
+// Captured before anything is re-parented into the full-screen overlay --
+// this is where the status/analysis/move-list/report nodes go back to.
+const playSidebar = postGameReportSection.parentElement!;
 const postGameReportOutput = document.querySelector<HTMLDivElement>("#post-game-report-output")!;
 const downloadPgnBtn = document.querySelector<HTMLButtonElement>("#download-pgn-btn")!;
 
@@ -1028,7 +1058,16 @@ async function updateBoard3D(board: PlayBoard) {
 function openFullscreen3D() {
   if (fullscreenOpen) return;
   fullscreenOpen = true;
-  fullscreenSlot.append(playStatus, playHangWarning, analysisOutput, playMoveList);
+  // The review and report come along too, so a finished game can be
+  // reviewed in the 3D view instead of only the 2D one.
+  fullscreenSlot.append(
+    reviewPanel,
+    playStatus,
+    playHangWarning,
+    analysisOutput,
+    playMoveList,
+    postGameReportSection,
+  );
   fullscreenOverlay.style.display = "flex";
   document.body.style.overflow = "hidden";
   board3dInstance?.remount(fullscreenBoardSlot);
@@ -1037,7 +1076,16 @@ function openFullscreen3D() {
 function closeFullscreen3D() {
   if (!fullscreenOpen) return;
   fullscreenOpen = false;
-  postGameReportSection.before(playStatus, playHangWarning, analysisOutput, playMoveList);
+  // Appended in their original document order -- the report moves into the
+  // overlay too, so it can't be used as the anchor it once was.
+  playSidebar.append(
+    reviewPanel,
+    playStatus,
+    playHangWarning,
+    analysisOutput,
+    playMoveList,
+    postGameReportSection,
+  );
   fullscreenOverlay.style.display = "none";
   document.body.style.overflow = "";
 }
@@ -1067,40 +1115,184 @@ fullscreenPromotion.addEventListener("click", (e) => {
   refreshBoard3DSelection(playBoard);
 });
 
+// --- Game review: step back through a finished game with every move's
+// grade on the board ---
+//
+// The whole point of the 2026-09-14 narrowing: the move-quality colors
+// used to exist for one move at a time, live, and then vanish. This drives
+// the same board (and the same 3D view) through a finished game, so the
+// grade for each move is something you can sit on, step through, or play
+// back. The grading itself is unchanged -- gameReview.ts joins a PGN to
+// the MoveAnalysisRecord[] the analysis already produced.
+
+const reviewPanel = document.querySelector<HTMLDivElement>("#review-panel")!;
+const reviewStripHost = document.querySelector<HTMLDivElement>("#review-strip-host")!;
+const reviewCaption = document.querySelector<HTMLParagraphElement>("#review-caption")!;
+const reviewTally = document.querySelector<HTMLDivElement>("#review-tally")!;
+const reviewFirstBtn = document.querySelector<HTMLButtonElement>("#review-first")!;
+const reviewPrevBtn = document.querySelector<HTMLButtonElement>("#review-prev")!;
+const reviewNextBtn = document.querySelector<HTMLButtonElement>("#review-next")!;
+const reviewLastBtn = document.querySelector<HTMLButtonElement>("#review-last")!;
+const reviewAutoplayBtn = document.querySelector<HTMLButtonElement>("#review-autoplay")!;
+const reviewWorstBtn = document.querySelector<HTMLButtonElement>("#review-worst")!;
+
+const REVIEW_AUTOPLAY_MS = 1200; // slow enough to actually read each grade
+
+let review: ReviewGame | null = null;
+let reviewIndex = -1; // -1 = the starting position, before ply 1
+let reviewAutoplayTimer: number | null = null;
+
+function stopReviewAutoplay() {
+  if (reviewAutoplayTimer !== null) {
+    window.clearInterval(reviewAutoplayTimer);
+    reviewAutoplayTimer = null;
+  }
+  reviewAutoplayBtn.textContent = "▶ Play it back";
+}
+
+function toggleReviewAutoplay() {
+  if (!review) return;
+  if (reviewAutoplayTimer !== null) {
+    stopReviewAutoplay();
+    return;
+  }
+  // Pressing play at the end replays from the top rather than doing nothing.
+  if (reviewIndex >= review.steps.length - 1) showReviewStep(-1);
+  reviewAutoplayBtn.textContent = "⏸ Pause";
+  reviewAutoplayTimer = window.setInterval(() => {
+    if (!review || reviewIndex >= review.steps.length - 1) {
+      stopReviewAutoplay();
+      return;
+    }
+    showReviewStep(reviewIndex + 1);
+  }, REVIEW_AUTOPLAY_MS);
+}
+
+function showReviewStep(index: number) {
+  if (!review || !playBoard) return;
+  const clamped = Math.max(-1, Math.min(index, review.steps.length - 1));
+  const movingForward = clamped > reviewIndex;
+  reviewIndex = clamped;
+  const step = clamped >= 0 ? review.steps[clamped] : null;
+
+  playBoard.showPosition(
+    step ? step.fenAfter : review.startFen,
+    step ? { from: step.from, to: step.to } : undefined,
+  );
+  if (step?.isHuman && step.classification) {
+    const color = getClassColor(step.classification);
+    // ms = 0: the marker holds while the viewer sits on this move.
+    playBoard.showMoveQuality(step.to, color, REVIEW_QUALITY_LABELS[step.classification], 0);
+    board3dInstance?.flashSquareQuality(step.to, color);
+    // Only on the way forward -- stepping back over a best move shouldn't
+    // re-fire the celebration.
+    if (step.classification === "best" && movingForward) confetti(playBoardWrap, 0.3);
+  }
+  if (step && shouldShowBetterMove(step) && step.bestMoveUci) {
+    playBoard.showArrow(step.bestMoveUci.slice(0, 2) as Square, step.bestMoveUci.slice(2, 4) as Square);
+  }
+  board3dInstance?.setPosition(playBoard.getFen());
+
+  reviewCaption.textContent = describeStep(review, clamped);
+  reviewStripHost.innerHTML = renderReviewStrip(review, clamped);
+  const atStart = clamped < 0;
+  const atEnd = clamped >= review.steps.length - 1;
+  reviewFirstBtn.disabled = atStart;
+  reviewPrevBtn.disabled = atStart;
+  reviewNextBtn.disabled = atEnd;
+  reviewLastBtn.disabled = atEnd;
+}
+
+/** Opens the review on `next`, landing on its final move — the position
+ * already on the board when a game ends, so nothing jumps under the
+ * viewer. Stepping back, or "Play it back", goes from there. */
+function enterReview(next: ReviewGame) {
+  stopReviewAutoplay();
+  review = next;
+  reviewIndex = next.steps.length; // so landing on the last step counts as "forward"
+  const board = ensurePlayBoard();
+  board.reset(next.humanColor, next.startFen); // orientation follows whose review this is
+  reviewPanel.style.display = "";
+  reviewTally.innerHTML = renderQualityTally(next);
+  reviewWorstBtn.style.display = worstHumanStepIndex(next) >= 0 ? "" : "none";
+  showReviewStep(next.steps.length - 1);
+}
+
+/** Reviews any analyzed game on the play board: shows the report card,
+ * scrolls the board into view, and opens the review. Takes the records
+ * rather than running the engine, so the caller decides where analysis
+ * comes from (a finished bot game, a pasted PGN, IndexedDB). */
+function openReviewForPgn(pgn: string, moves: MoveAnalysisRecord[], reviewerColor: "white" | "black") {
+  expandCard("play-section");
+  enterReview(buildReview(pgn, moves, reviewerColor));
+  playBoardWrap.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+/** Leaves review mode. The board is handed back to whatever the caller is
+ * about to do with it (a new game, a drill, an undo). */
+function exitReview() {
+  stopReviewAutoplay();
+  review = null;
+  reviewIndex = -1;
+  reviewPanel.style.display = "none";
+  reviewStripHost.innerHTML = "";
+  reviewTally.innerHTML = "";
+  reviewCaption.textContent = "";
+}
+
+reviewFirstBtn.addEventListener("click", () => {
+  stopReviewAutoplay();
+  showReviewStep(-1);
+});
+reviewPrevBtn.addEventListener("click", () => {
+  stopReviewAutoplay();
+  showReviewStep(reviewIndex - 1);
+});
+reviewNextBtn.addEventListener("click", () => {
+  stopReviewAutoplay();
+  showReviewStep(reviewIndex + 1);
+});
+reviewLastBtn.addEventListener("click", () => {
+  stopReviewAutoplay();
+  if (review) showReviewStep(review.steps.length - 1);
+});
+reviewAutoplayBtn.addEventListener("click", toggleReviewAutoplay);
+reviewWorstBtn.addEventListener("click", () => {
+  if (!review) return;
+  stopReviewAutoplay();
+  const worst = worstHumanStepIndex(review);
+  if (worst >= 0) showReviewStep(worst);
+});
+reviewStripHost.addEventListener("click", (e) => {
+  const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-review-index]");
+  if (!chip) return;
+  stopReviewAutoplay();
+  showReviewStep(parseInt(chip.dataset.reviewIndex!, 10));
+});
+
+// Arrow-key stepping, the same convention the move-by-move heatmap card
+// already uses -- ignored while typing, and only while a review is open.
+document.addEventListener("keydown", (e) => {
+  if (!review) return;
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const target = e.target as HTMLElement | null;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+  e.preventDefault();
+  stopReviewAutoplay();
+  showReviewStep(reviewIndex + (e.key === "ArrowRight" ? 1 : -1));
+});
+
 async function runPostGameReport(board: PlayBoard) {
   postGameReportSection.style.display = "";
-  postGameReportOutput.innerHTML = `<p class="status-line">Analyzing your game…</p>`;
+  postGameReportOutput.innerHTML = `<p class="status-line">Grading every move of that game… this takes a few seconds.</p>`;
   try {
     const pgn = board.getPgn();
-    const report = await analyzeFinishedBotGame(pgn, humanColor);
+    // One analysis pass feeds all three consumers: the stat grid, the
+    // annotated PGN, and the move-by-move review.
+    const { report, moves } = await analyzeFinishedBotGame(pgn, humanColor);
     postGameReportOutput.innerHTML = renderPostGameReport(report);
-
-    const engine = await getAnalysisEngine();
-    const syntheticMoves = await analyzeGame(
-      engine,
-      {
-        chessComUuid: "report",
-        username: "bot-game",
-        url: "",
-        pgn,
-        timeControl: "0",
-        timeClass: "unknown",
-        rules: "chess",
-        rated: false,
-        endTime: 0,
-        whiteUsername: "",
-        whiteRating: 0,
-        blackUsername: "",
-        blackRating: 0,
-        whiteResult: "win",
-        blackResult: "loss",
-        userColor: humanColor,
-        userResult: "win",
-        analyzed: false,
-      },
-      DEFAULT_ANALYSIS_OPTIONS,
-    );
-    lastAnnotatedPgn = buildAnnotatedPgn(pgn, syntheticMoves, humanColor);
+    lastAnnotatedPgn = buildAnnotatedPgn(pgn, moves, humanColor);
+    enterReview(buildReview(pgn, moves, humanColor));
   } catch (err: any) {
     postGameReportOutput.innerHTML = `<p class="status-line status-error">Report failed: ${err.message ?? err}</p>`;
   }
@@ -1212,6 +1404,7 @@ botNewGameBtn.addEventListener("click", async () => {
   renderMoveList();
   playHangWarning.style.display = "none";
   postGameReportSection.style.display = "none";
+  exitReview();
   setStatus(drillObjective, "");
   clearSavedBotGame();
 
@@ -1228,6 +1421,14 @@ botNewGameBtn.addEventListener("click", async () => {
 
 botUndoBtn.addEventListener("click", async () => {
   if (!playBoard) return;
+  // A review displays positions on this board, which loses the game's own
+  // move history -- so undoing out of a review rebuilds the real game from
+  // the reviewed PGN first, and undoes from there.
+  if (review) {
+    const pgn = review.pgn;
+    exitReview();
+    playBoard.loadFromPgn(humanColor, pgn);
+  }
   const undone = playBoard.undoMoves(2);
   if (undone === 0) return;
   sanHistory = playBoard.getSanHistory();
@@ -1243,6 +1444,7 @@ botUndoBtn.addEventListener("click", async () => {
 });
 
 botShowAnalysisCheckbox.addEventListener("change", () => {
+  if (review) return; // the review owns the board (and its arrow) while it's open
   if (playBoard) void updateAnalysisPanel(playBoard);
 });
 botShowHeatmapCheckbox.addEventListener("change", () => {
@@ -1266,6 +1468,7 @@ resumeBtn.addEventListener("click", async () => {
   gameReportedThisGame = false;
   lastAnnotatedPgn = null;
   postGameReportSection.style.display = "none";
+  exitReview();
 
   const board = ensurePlayBoard();
   board.loadFromPgn(humanColor, savedGame.pgn);
@@ -2975,6 +3178,8 @@ drillLoadBtn.addEventListener("click", async () => {
   humanColor = drill.practicingColor;
   sanHistory = [];
   renderMoveList();
+  exitReview(); // the drill takes the board over from any open review
+  postGameReportSection.style.display = "none";
   setStatus(drillObjective, drill.objective, "ok");
 
   if (!playBoard) {
@@ -3051,6 +3256,10 @@ analyzeForm.addEventListener("submit", async (e) => {
   try {
     const moves = await (window as any).__cheggaAnalyzePgn(pgn);
     analyzeLog.textContent = `✅ ${moves.length} moves analyzed.\n${JSON.stringify(moves, null, 2)}`;
+    // Any analyzed PGN can be reviewed, not just a finished bot game --
+    // same review, same board. This is also the path a synced Chess.com
+    // game will take once there's a game picker to open one from.
+    openReviewForPgn(pgn, moves, "white");
   } catch (err: any) {
     analyzeLog.textContent = `❌ ANALYSIS FAILED: ${err.message ?? err}`;
   } finally {

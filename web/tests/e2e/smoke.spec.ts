@@ -45,6 +45,27 @@ test.describe("landing page smoke", () => {
     await expect(page.locator("#export-data-btn")).toBeAttached();
   });
 
+  // The review itself needs an analyzed game (real engine time), so the
+  // deploy check is that its controls shipped and start out of the way.
+  test("the game review is wired up, and stays hidden until there is a game", async ({ page }) => {
+    await page.goto("/");
+    const panel = page.locator("#review-panel");
+    await expect(panel).toBeAttached();
+    await expect(panel).toBeHidden();
+    for (const id of [
+      "#review-strip-host",
+      "#review-caption",
+      "#review-first",
+      "#review-prev",
+      "#review-next",
+      "#review-last",
+      "#review-autoplay",
+      "#review-worst",
+    ]) {
+      await expect(page.locator(id)).toBeAttached();
+    }
+  });
+
   test("body does not scroll horizontally on a phone viewport", async ({ page }) => {
     await page.goto("/");
     await page.waitForTimeout(500);

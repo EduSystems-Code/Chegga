@@ -1105,6 +1105,89 @@ input[type="range"] {
   min-width: 24px;
 }
 
+/* ---- Game review (gameReview.ts / gameReviewView.ts) ----
+   The timeline is the shape of one game's quality: one chip per
+   half-move, the reviewer's own moves tall and colored by tier, the
+   opponent's short and neutral, so the reviewer's own run reads first. */
+.review-heading {
+  margin: 0 0 10px;
+}
+.review-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  max-height: 140px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+.review-chip {
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--chip-color);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.review-chip-mine {
+  width: 9px;
+  height: 22px;
+}
+.review-chip-theirs {
+  width: 9px;
+  height: 9px;
+  opacity: 0.55;
+}
+.review-chip:hover {
+  transform: scaleY(1.12);
+}
+.review-chip-current {
+  box-shadow: 0 0 0 2px var(--accent-strong);
+}
+.review-caption {
+  font-size: 0.86rem;
+  color: var(--text);
+  min-height: 2.4em;
+  margin: 0 0 10px;
+}
+.review-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.review-buttons button {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+.review-buttons button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.review-hint {
+  font-size: 0.74rem;
+  margin: 0 0 10px;
+}
+.quality-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.quality-tally-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.quality-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 .play-checkbox-label {
   display: flex;
   align-items: center;
@@ -1892,6 +1975,24 @@ input[type="range"] {
   80% { opacity: 1; }
   100% { opacity: 0; }
 }
+/* Held marker (showMoveQuality's ms = 0): the game review parks the grade
+   on the square for as long as the viewer stays on that move, so it
+   animates in and then stays instead of fading out. */
+.play-quality-ring.play-quality-hold {
+  animation: play-quality-hold-in 0.3s ease-out forwards;
+}
+.play-quality-label.play-quality-hold {
+  animation: play-quality-hold-label-in 0.3s ease-out forwards;
+}
+@keyframes play-quality-hold-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes play-quality-hold-label-in {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
 
 /* Global press feedback — cheap, kills the "static" feel */
 button:active { transform: scale(0.96); }
@@ -1903,7 +2004,9 @@ section.card[data-tier="primary"]:hover { transform: translateY(-1px); }
   .juice-bump, .juice-shake,
   .juice-flash-good, .juice-flash-bad, .juice-flash-gold,
   .today-dot-on, .juice-screen-glow { animation: none; }
-  .play-quality-ring, .play-quality-label { animation: none; opacity: 1; transform: none; }
+  .play-quality-ring, .play-quality-label,
+  .play-quality-ring.play-quality-hold, .play-quality-label.play-quality-hold { animation: none; opacity: 1; transform: none; }
+  .review-chip:hover { transform: none; }
   .juice-banner { transition: opacity 0.2s ease; transform: none; opacity: 0; }
   .juice-banner-in { opacity: 1; }
   button:active { transform: none; }

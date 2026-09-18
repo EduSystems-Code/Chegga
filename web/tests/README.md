@@ -16,7 +16,10 @@ npm run test:watch # watch mode
 
 Covered so far: `clockParser`, `timePressure`, `blunderRate`,
 `consistencyMetrics`, `classificationColors`, `rivalTracking` (the
-since-last-visit delta).
+since-last-visit delta), `gameReview` (the step-through model behind the
+review screen), and `engineAnalysis` (the replay and grading themselves,
+driven by a stand-in engine — including the two cases that bit: a game
+starting from a non-standard position, and a checkmating move).
 
 Good next targets: `strengthEstimate`, `roadTo2000` (the frozen-model
 inversion — critique #8), `blunderTagger`, `gameNormalizer`.

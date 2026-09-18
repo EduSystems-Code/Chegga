@@ -58,7 +58,7 @@ export class PlayBoard {
   private drag: DragState | null = null;
   private arrow: { from: Square; to: Square } | null = null;
   private heatmapMode: HeatmapMode = "off";
-  private qualityFlash: { square: Square; color: string; label?: string } | null = null;
+  private qualityFlash: { square: Square; color: string; label?: string; hold?: boolean } | null = null;
   private qualityFlashTimeout: number | null = null;
   // Browsers fire a synthetic `click` right after `pointerup` even when
   // the pointerdown->pointerup pair was a real drag, not a tap -- this
@@ -121,6 +121,25 @@ export class PlayBoard {
     this.lastMove = last ? { from: last.from, to: last.to } : null;
     const sideToMove = this.chess.turn() === "w" ? "white" : "black";
     this.locked = sideToMove !== orientation;
+    this.render();
+  }
+
+  /** Display-only: put an arbitrary position on the board, with the move
+   * that produced it highlighted. Used by the game review, which steps
+   * through a finished game — so the board locks (a review is for looking,
+   * not moving) and this deliberately does NOT touch `startFen`, since the
+   * reviewed game's own start hasn't changed. The reviewed game's move
+   * history is not recoverable from here afterwards; a caller that needs
+   * it back reloads the PGN (loadFromPgn). */
+  showPosition(fen: string, lastMove?: { from: Square; to: Square }): void {
+    this.chess = new Chess(fen);
+    this.selected = null;
+    this.pendingPromotion = null;
+    this.drag = null;
+    this.arrow = null;
+    this.clearQualityFlash();
+    this.lastMove = lastMove ?? null;
+    this.locked = true;
     this.render();
   }
 
@@ -215,12 +234,20 @@ export class PlayBoard {
    * means, same as showArrow() not knowing about engine lines. `label`
    * (e.g. "Best!") is shown for tiers worth calling out; omit it for a
    * plain color pulse. Respects the effects-off / reduced-motion
-   * preferences juice.ts's own effects already do. */
+   * preferences juice.ts's own effects already do.
+   *
+   * `ms = 0` holds the marker until the next call instead of fading it —
+   * what the game review needs, where the marker is the answer to "how
+   * good was this move?" for as long as the viewer sits on it. A held
+   * marker is static, so it ignores the effects-off preference: that
+   * setting turns off animation and celebration, not information. */
   showMoveQuality(square: Square, color: string, label?: string, ms = 1100): void {
     this.clearQualityFlash();
-    if (!effectsEnabled()) return;
-    this.qualityFlash = { square, color, label };
+    const hold = ms <= 0;
+    if (!hold && !effectsEnabled()) return;
+    this.qualityFlash = { square, color, label, hold };
     this.render();
+    if (hold) return;
     this.qualityFlashTimeout = window.setTimeout(() => {
       this.qualityFlash = null;
       this.qualityFlashTimeout = null;
@@ -519,8 +546,8 @@ export class PlayBoard {
             ${tint ? `<span class="play-heatmap-tint" style="background:${tint}"></span>` : ""}
             ${pieceHtml}
             ${dot}
-            ${quality ? `<span class="play-quality-ring" style="--quality-color:${quality.color}"></span>` : ""}
-            ${quality?.label ? `<span class="play-quality-label" style="--quality-color:${quality.color}">${quality.label}</span>` : ""}
+            ${quality ? `<span class="play-quality-ring${quality.hold ? " play-quality-hold" : ""}" style="--quality-color:${quality.color}"></span>` : ""}
+            ${quality?.label ? `<span class="play-quality-label${quality.hold ? " play-quality-hold" : ""}" style="--quality-color:${quality.color}">${quality.label}</span>` : ""}
           </div>`;
       }
     }
