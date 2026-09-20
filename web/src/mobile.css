@@ -378,3 +378,28 @@ body {
     max-width: 100%;
   }
 }
+
+/* ---- Game picker and review practice (small screens) ---- */
+@media (max-width: 600px) {
+  .picker-card {
+    flex-basis: 78%; /* one card plus a peek of the next, so it reads as swipeable */
+  }
+  .picker-nav {
+    display: none; /* the track swipes; the arrow buttons are for a mouse */
+  }
+  .picker-filter {
+    min-height: 40px;
+  }
+  .saved-row {
+    flex-wrap: wrap;
+  }
+  .saved-text {
+    flex-basis: 100%;
+  }
+  .review-practice button,
+  #try-panel .review-buttons button,
+  .candidate-chip,
+  .saved-row button {
+    min-height: 44px;
+  }
+}

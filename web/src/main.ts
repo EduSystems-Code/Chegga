@@ -32,8 +32,11 @@ import {
   putRivalSnapshot,
   getRivalSnapshots,
   countSyncStatesForUsername,
+  putSavedPuzzles,
+  getSavedPuzzles,
+  deleteSavedPuzzle,
 } from "./db";
-import type { GameRecord, MoveAnalysisRecord, ExportedData } from "./db";
+import type { GameRecord, MoveAnalysisRecord, ExportedData, SavedPuzzleRecord } from "./db";
 import { Engine } from "./engine";
 import { ChessComClient } from "./chessComClient";
 import { syncGames, quickSyncRecentGames } from "./syncService";
@@ -128,6 +131,7 @@ import { setupFeedbackForm } from "./feedbackForm";
 import { BOARD_THEMES, applyBoardTheme, loadSavedBoardTheme } from "./boardTheme";
 import {
   analyzePosition,
+  getAnalysisEngine,
   evalBarWhiteFraction,
   formatEval,
   bestMoveSquares,
@@ -138,12 +142,30 @@ import { analyzeFinishedBotGame, renderPostGameReport, buildAnnotatedPgn, downlo
 import {
   buildReview,
   describeStep,
+  describeBefore,
   shouldShowBetterMove,
+  betterMoveArrowFitsAfterBoard,
+  canPracticeStep,
+  keyMoments,
   worstHumanStepIndex,
   REVIEW_QUALITY_LABELS,
   type ReviewGame,
+  type ReviewStep,
 } from "./gameReview";
-import { renderReviewStrip, renderQualityTally } from "./gameReviewView";
+import { renderReviewStrip, renderQualityTally, renderCandidateList } from "./gameReviewView";
+import { explainMove, explainInputFromStep, explainInputFromPuzzle } from "./moveExplanation";
+import {
+  buildCandidates,
+  buildOverlay,
+  quickArrows,
+  type Candidate,
+  type OverlayArrow,
+  type OverlayTint,
+} from "./candidateMoves";
+import { analyzeCandidates, cachedCandidateLines } from "./candidateAnalysis";
+import { buildPickerCards, pickerCounts, type PickerFilter } from "./gamePicker";
+import { renderGamePicker, renderSavedPositions } from "./gamePickerView";
+import { puzzleFromStep } from "./savedPuzzles";
 import {
   playMoveSound,
   playCaptureSound,
@@ -214,6 +236,7 @@ app.innerHTML = `
       <a href="#today-section">Today</a>
       <a href="#play-section">Play</a>
       <a href="#sync-section">Get started</a>
+      <a href="#picker-section">Your games</a>
       <a href="#profile-section">Profile</a>
       <a href="#coming-soon-section">Coming soon</a>
       <a href="#feedback-form-details">Feedback</a>
@@ -263,6 +286,7 @@ app.innerHTML = `
             <h3 class="review-heading">Game review</h3>
             <div id="review-strip-host"></div>
             <p id="review-caption" class="review-caption"></p>
+            <p id="review-why" class="review-why" style="display:none"></p>
             <div class="review-buttons">
               <button type="button" id="review-first" aria-label="Jump to the starting position">⏮</button>
               <button type="button" id="review-prev" aria-label="Previous move">◀</button>
@@ -272,7 +296,24 @@ app.innerHTML = `
               <button type="button" id="review-worst" class="btn-ghost">Your worst move</button>
             </div>
             <p class="tagline review-hint">Arrow keys step through it too.</p>
+            <label class="play-checkbox-label review-before-label"><input type="checkbox" id="review-before" /> Show the position before the move, with the best moves</label>
+            <div id="review-candidates"></div>
+            <div class="review-buttons review-practice">
+              <button type="button" id="review-try" class="btn-quiet" style="display:none">Try this position</button>
+              <button type="button" id="review-save" class="btn-quiet" style="display:none">Save this position</button>
+              <button type="button" id="review-save-key" class="btn-quiet" style="display:none">Save this game's key moments</button>
+            </div>
             <div id="review-tally"></div>
+            <p class="tagline review-hint">Reasons come from the engine's numbers and simple board checks, not from a human coach.</p>
+          </div>
+          <div id="try-panel" style="display:none">
+            <h3 class="review-heading">Try this position</h3>
+            <p id="try-status" class="review-caption" role="status"></p>
+            <div class="review-buttons">
+              <button type="button" id="try-again" class="btn-quiet" style="display:none">Try again</button>
+              <button type="button" id="try-show" class="btn-quiet" style="display:none">Show the best move</button>
+              <button type="button" id="try-done">Done</button>
+            </div>
           </div>
           <p id="play-status" class="status-line">Click "New game" to start.</p>
           <p id="play-hang-warning" class="status-line status-error" style="display:none"></p>
@@ -346,6 +387,17 @@ app.innerHTML = `
       </form>
       <p id="analyze-recent-log" class="status-line"></p>
       <div id="analyze-progress"></div>
+    </section>
+
+    <section class="card" id="picker-section" data-tier="primary" style="display:none">
+      <h2>Review a game</h2>
+      <p class="tagline" style="margin-bottom:16px">
+        Pick any of your synced games and step through it in 2D or 3D — the best move in each position, the move you
+        played, and a short reason it was better or worse.
+      </p>
+      <div id="picker-output"></div>
+      <p id="picker-status" class="status-line" role="status"></p>
+      <div id="saved-positions"></div>
     </section>
 
     <section class="card" id="focus-section" data-tier="primary" style="display:none">
@@ -977,6 +1029,7 @@ function applyMoveQualityJuice(board: PlayBoard, toSquare: Square, sideToMoveNow
  * `justMovedTo` is passed only from the human's own move -- when set,
  * this also classifies and juices that move once the fresh eval is in. */
 async function updateAnalysisPanel(board: PlayBoard, justMovedTo?: Square) {
+  if (review || tryTarget) return; // the review or puzzle owns the board and its arrows
   if (!botShowAnalysisCheckbox.checked) {
     analysisOutput.innerHTML = "";
     board.showArrow(undefined, undefined);
@@ -988,6 +1041,7 @@ async function updateAnalysisPanel(board: PlayBoard, justMovedTo?: Square) {
   analysisOutput.innerHTML = `<p class="status-line">Analyzing…</p>`;
   try {
     const result = await analyzePosition(fen, sideToMove);
+    if (review || tryTarget) return; // taken over while the engine was thinking
     if (justMovedTo) applyMoveQualityJuice(board, justMovedTo, sideToMove, result);
     lastPositionEval = { cp: result.whiteRelativeCp, mate: result.whiteRelativeMate };
 
@@ -1051,6 +1105,7 @@ async function updateBoard3D(board: PlayBoard) {
   }
   openFullscreen3D();
   board3dInstance.setPosition(board.getFen());
+  if (currentOverlay) board3dInstance.setOverlays(currentOverlay.tints, currentOverlay.arrows);
   refreshBoard3DSelection(board);
   updatePromotionPicker(board);
 }
@@ -1062,6 +1117,7 @@ function openFullscreen3D() {
   // reviewed in the 3D view instead of only the 2D one.
   fullscreenSlot.append(
     reviewPanel,
+    tryPanel,
     playStatus,
     playHangWarning,
     analysisOutput,
@@ -1080,6 +1136,7 @@ function closeFullscreen3D() {
   // overlay too, so it can't be used as the anchor it once was.
   playSidebar.append(
     reviewPanel,
+    tryPanel,
     playStatus,
     playHangWarning,
     analysisOutput,
@@ -1135,12 +1192,32 @@ const reviewNextBtn = document.querySelector<HTMLButtonElement>("#review-next")!
 const reviewLastBtn = document.querySelector<HTMLButtonElement>("#review-last")!;
 const reviewAutoplayBtn = document.querySelector<HTMLButtonElement>("#review-autoplay")!;
 const reviewWorstBtn = document.querySelector<HTMLButtonElement>("#review-worst")!;
+const reviewWhy = document.querySelector<HTMLParagraphElement>("#review-why")!;
+const reviewBeforeCheckbox = document.querySelector<HTMLInputElement>("#review-before")!;
+const reviewCandidatesHost = document.querySelector<HTMLDivElement>("#review-candidates")!;
+const reviewTryBtn = document.querySelector<HTMLButtonElement>("#review-try")!;
+const reviewSaveBtn = document.querySelector<HTMLButtonElement>("#review-save")!;
+const reviewSaveKeyBtn = document.querySelector<HTMLButtonElement>("#review-save-key")!;
+const tryPanel = document.querySelector<HTMLDivElement>("#try-panel")!;
+const tryStatus = document.querySelector<HTMLParagraphElement>("#try-status")!;
+const tryAgainBtn = document.querySelector<HTMLButtonElement>("#try-again")!;
+const tryShowBtn = document.querySelector<HTMLButtonElement>("#try-show")!;
+const tryDoneBtn = document.querySelector<HTMLButtonElement>("#try-done")!;
 
 const REVIEW_AUTOPLAY_MS = 1200; // slow enough to actually read each grade
 
 let review: ReviewGame | null = null;
 let reviewIndex = -1; // -1 = the starting position, before ply 1
 let reviewAutoplayTimer: number | null = null;
+let reviewOpening: string | undefined; // the opening name of a synced game, kept for saved puzzles
+// "Before" view: the position the move was chosen in, with the engine's
+// ranked candidate moves shaded on the board. Off = the position after the
+// move, with its grade held on the square (the original review).
+let reviewShowBefore = false;
+let reviewPreviewUci: string | null = null; // a candidate the viewer tapped in the list
+let reviewCandidates: Candidate[] = [];
+let candidateRequestId = 0;
+const CANDIDATE_DEBOUNCE_MS = 250; // don't start a search for a position the viewer is only skimming past
 
 function stopReviewAutoplay() {
   if (reviewAutoplayTimer !== null) {
@@ -1168,32 +1245,121 @@ function toggleReviewAutoplay() {
   }, REVIEW_AUTOPLAY_MS);
 }
 
+/** Draws a candidate overlay on the 2D board and, when open, the 3D one. */
+const OVERLAY_ARROW_WIDTH: Record<OverlayArrow["kind"], number> = { best: 5, played: 4, preview: 3 };
+// Kept so the 3D board, if it is opened after the overlay was drawn, can
+// pick it up instead of starting bare until the next step.
+let currentOverlay: { arrows: OverlayArrow[]; tints: OverlayTint[] } | null = null;
+
+function applyOverlay(arrows: OverlayArrow[], tints: OverlayTint[]) {
+  if (!playBoard) return;
+  currentOverlay = { arrows, tints };
+  playBoard.showArrows(arrows.map((a) => ({ from: a.from, to: a.to, color: a.color, width: OVERLAY_ARROW_WIDTH[a.kind] })));
+  playBoard.setCandidateTints(tints);
+  board3dInstance?.setOverlays(tints, arrows);
+}
+
+/** Forgets the overlay on the 3D board (the 2D board drops its own whenever
+ * it is given a new position). */
+function clearOverlayState() {
+  currentOverlay = null;
+  board3dInstance?.clearOverlays();
+}
+
+function currentReviewStep(): ReviewStep | null {
+  return review && reviewIndex >= 0 ? (review.steps[reviewIndex] ?? null) : null;
+}
+
+/** Paints the candidate overlay and list for the step now on the board. */
+function renderCandidates(step: ReviewStep) {
+  const overlay = buildOverlay(reviewCandidates, step.uci, step.classification, reviewPreviewUci);
+  applyOverlay(overlay.arrows, overlay.tints);
+  reviewCandidatesHost.innerHTML = renderCandidateList(reviewCandidates, {
+    playedUci: step.uci,
+    playedSan: step.san,
+    previewUci: reviewPreviewUci,
+  });
+}
+
+async function loadCandidatesFor(step: ReviewStep) {
+  const requestId = ++candidateRequestId;
+  reviewCandidates = [];
+  const stale = () => requestId !== candidateRequestId || !reviewShowBefore || currentReviewStep() !== step;
+
+  let lines = cachedCandidateLines(step.fenBefore);
+  if (!lines) {
+    reviewCandidatesHost.innerHTML = `<p class="status-line">Finding the best moves here…</p>`;
+    await new Promise((resolve) => window.setTimeout(resolve, CANDIDATE_DEBOUNCE_MS));
+    if (stale()) return;
+    try {
+      lines = (await analyzeCandidates(step.fenBefore)) ?? undefined;
+    } catch (err: any) {
+      if (!stale()) {
+        reviewCandidatesHost.innerHTML = `<p class="status-line status-error">Couldn't rank the moves: ${String(err.message ?? err).replace(/[<>&]/g, "")}</p>`;
+      }
+      return;
+    }
+  }
+  if (stale() || !lines) return; // superseded by a newer position -- that one will paint
+  reviewCandidates = buildCandidates(step.fenBefore, lines);
+  renderCandidates(step);
+}
+
+function updateReviewActions(step: ReviewStep | null) {
+  const canPractice = !!step && canPracticeStep(step);
+  reviewTryBtn.style.display = canPractice ? "" : "none";
+  reviewSaveBtn.style.display = canPractice ? "" : "none";
+  if (canPractice && review) {
+    const p = puzzleFromStep(review, step!);
+    const saved = !!p && savedIds.has(p.id);
+    reviewSaveBtn.textContent = saved ? "Saved ✓" : "Save this position";
+    reviewSaveBtn.disabled = saved;
+  }
+  reviewSaveKeyBtn.style.display = review && keyMoments(review).length ? "" : "none";
+}
+
 function showReviewStep(index: number) {
   if (!review || !playBoard) return;
+  endTry(); // stepping the review leaves any position being tried
   const clamped = Math.max(-1, Math.min(index, review.steps.length - 1));
   const movingForward = clamped > reviewIndex;
   reviewIndex = clamped;
+  reviewPreviewUci = null;
   const step = clamped >= 0 ? review.steps[clamped] : null;
+  const beforeView = reviewShowBefore && !!step;
 
-  playBoard.showPosition(
-    step ? step.fenAfter : review.startFen,
-    step ? { from: step.from, to: step.to } : undefined,
-  );
-  if (step?.isHuman && step.classification) {
-    const color = getClassColor(step.classification);
-    // ms = 0: the marker holds while the viewer sits on this move.
-    playBoard.showMoveQuality(step.to, color, REVIEW_QUALITY_LABELS[step.classification], 0);
-    board3dInstance?.flashSquareQuality(step.to, color);
-    // Only on the way forward -- stepping back over a best move shouldn't
-    // re-fire the celebration.
-    if (step.classification === "best" && movingForward) confetti(playBoardWrap, 0.3);
-  }
-  if (step && shouldShowBetterMove(step) && step.bestMoveUci) {
-    playBoard.showArrow(step.bestMoveUci.slice(0, 2) as Square, step.bestMoveUci.slice(2, 4) as Square);
+  if (beforeView && step) {
+    // The position the move was chosen in: what could have been played.
+    const previous = clamped > 0 ? review.steps[clamped - 1] : undefined;
+    playBoard.showPosition(step.fenBefore, previous ? { from: previous.from, to: previous.to } : undefined);
+    applyOverlay(quickArrows(step.bestMoveUci, step.uci, step.classification), []); // the stored best move shows at once; the shading follows the engine
+    void loadCandidatesFor(step);
+  } else {
+    candidateRequestId += 1; // any search still in flight is now for a view that isn't showing
+    reviewCandidates = [];
+    reviewCandidatesHost.innerHTML = "";
+    clearOverlayState();
+    playBoard.showPosition(step ? step.fenAfter : review.startFen, step ? { from: step.from, to: step.to } : undefined);
+    if (step?.isHuman && step.classification) {
+      const color = getClassColor(step.classification);
+      // ms = 0: the marker holds while the viewer sits on this move.
+      playBoard.showMoveQuality(step.to, color, REVIEW_QUALITY_LABELS[step.classification], 0);
+      board3dInstance?.flashSquareQuality(step.to, color);
+      // Only on the way forward -- stepping back over a best move shouldn't
+      // re-fire the celebration.
+      if (step.classification === "best" && movingForward) confetti(playBoardWrap, 0.3);
+    }
+    if (step && shouldShowBetterMove(step) && step.bestMoveUci && betterMoveArrowFitsAfterBoard(step)) {
+      playBoard.showArrow(step.bestMoveUci.slice(0, 2) as Square, step.bestMoveUci.slice(2, 4) as Square);
+    }
   }
   board3dInstance?.setPosition(playBoard.getFen());
 
-  reviewCaption.textContent = describeStep(review, clamped);
+  reviewCaption.textContent = beforeView ? describeBefore(review, clamped) : describeStep(review, clamped);
+  const why = step && step.isHuman ? explainMove(explainInputFromStep(step)) : [];
+  reviewWhy.textContent = why.join(" ");
+  reviewWhy.style.display = why.length ? "" : "none";
+  updateReviewActions(step);
   reviewStripHost.innerHTML = renderReviewStrip(review, clamped);
   const atStart = clamped < 0;
   const atEnd = clamped >= review.steps.length - 1;
@@ -1208,6 +1374,7 @@ function showReviewStep(index: number) {
  * viewer. Stepping back, or "Play it back", goes from there. */
 function enterReview(next: ReviewGame) {
   stopReviewAutoplay();
+  preserveBotGameForLater();
   review = next;
   reviewIndex = next.steps.length; // so landing on the last step counts as "forward"
   const board = ensurePlayBoard();
@@ -1222,9 +1389,16 @@ function enterReview(next: ReviewGame) {
  * scrolls the board into view, and opens the review. Takes the records
  * rather than running the engine, so the caller decides where analysis
  * comes from (a finished bot game, a pasted PGN, IndexedDB). */
-function openReviewForPgn(pgn: string, moves: MoveAnalysisRecord[], reviewerColor: "white" | "black") {
+function openReviewForPgn(
+  pgn: string,
+  moves: MoveAnalysisRecord[],
+  reviewerColor: "white" | "black",
+  gameId?: string,
+  openingName?: string,
+) {
   expandCard("play-section");
-  enterReview(buildReview(pgn, moves, reviewerColor));
+  reviewOpening = openingName;
+  enterReview(buildReview(pgn, moves, reviewerColor, gameId));
   playBoardWrap.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
@@ -1232,12 +1406,20 @@ function openReviewForPgn(pgn: string, moves: MoveAnalysisRecord[], reviewerColo
  * about to do with it (a new game, a drill, an undo). */
 function exitReview() {
   stopReviewAutoplay();
+  endTry();
+  candidateRequestId += 1;
   review = null;
   reviewIndex = -1;
+  reviewOpening = undefined;
+  reviewCandidates = [];
   reviewPanel.style.display = "none";
   reviewStripHost.innerHTML = "";
   reviewTally.innerHTML = "";
   reviewCaption.textContent = "";
+  reviewWhy.textContent = "";
+  reviewWhy.style.display = "none";
+  reviewCandidatesHost.innerHTML = "";
+  clearOverlayState();
 }
 
 reviewFirstBtn.addEventListener("click", () => {
@@ -1281,6 +1463,326 @@ document.addEventListener("keydown", (e) => {
   stopReviewAutoplay();
   showReviewStep(reviewIndex + (e.key === "ArrowRight" ? 1 : -1));
 });
+
+// --- Review: "before" view, tapping a candidate ---
+
+reviewBeforeCheckbox.addEventListener("change", () => {
+  reviewShowBefore = reviewBeforeCheckbox.checked;
+  if (review) {
+    stopReviewAutoplay();
+    showReviewStep(reviewIndex);
+  }
+});
+
+reviewCandidatesHost.addEventListener("click", (e) => {
+  const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-candidate]");
+  const step = currentReviewStep();
+  if (!chip || !step) return;
+  const uci = chip.dataset.candidate!;
+  reviewPreviewUci = reviewPreviewUci === uci ? null : uci;
+  renderCandidates(step);
+});
+
+// --- Saved positions (practice later) and "try this position" ---
+//
+// A position from a review can be practiced on the same board: it goes back
+// to the position the move was chosen in, and the viewer plays a move. The
+// same flow runs for a position saved earlier, with no game open.
+
+let savedRecords: SavedPuzzleRecord[] = [];
+let savedIds = new Set<string>();
+
+const savedPositionsHost = document.querySelector<HTMLDivElement>("#saved-positions")!;
+
+async function refreshSavedPositions() {
+  try {
+    const db = await openDb();
+    try {
+      savedRecords = await getSavedPuzzles(db, lcUser());
+    } finally {
+      db.close();
+    }
+  } catch {
+    return; // a storage failure must never break the review itself
+  }
+  savedIds = new Set(savedRecords.map((p) => p.id));
+  const progress = getProgress(lcUser());
+  const solved = new Set(savedRecords.filter((p) => progress[p.id]?.solved).map((p) => p.id));
+  savedPositionsHost.innerHTML = renderSavedPositions(savedRecords, solved);
+  updateReviewActions(currentReviewStep());
+}
+
+async function saveReviewPuzzles(puzzles: NonNullable<ReturnType<typeof puzzleFromStep>>[]) {
+  if (!puzzles.length) return;
+  try {
+    const db = await openDb();
+    try {
+      await putSavedPuzzles(
+        db,
+        puzzles.map((p) => ({ ...p, username: lcUser(), savedAt: Date.now() })),
+      );
+    } finally {
+      db.close();
+    }
+    await refreshSavedPositions();
+    showToast(
+      puzzles.length === 1
+        ? "Saved. Find it under “Review a game” → Saved positions."
+        : `Saved ${puzzles.length} positions under “Review a game” → Saved positions.`,
+    );
+  } catch (err: any) {
+    showToast(`Couldn't save: ${err.message ?? err}`);
+  }
+}
+
+reviewSaveBtn.addEventListener("click", () => {
+  const step = currentReviewStep();
+  const p = review && step ? puzzleFromStep(review, step, reviewOpening) : null;
+  if (p) void saveReviewPuzzles([p]);
+});
+
+reviewSaveKeyBtn.addEventListener("click", () => {
+  if (!review) return;
+  const puzzles = keyMoments(review)
+    .map((s) => puzzleFromStep(review!, s, reviewOpening))
+    .filter((p): p is NonNullable<typeof p> => p !== null);
+  void saveReviewPuzzles(puzzles);
+});
+
+savedPositionsHost.addEventListener("click", async (e) => {
+  const target = e.target as HTMLElement;
+  const tryBtn = target.closest<HTMLElement>("[data-saved-try]");
+  if (tryBtn) {
+    const record = savedRecords.find((p) => p.id === tryBtn.dataset.savedTry);
+    if (record) startTry(record);
+    return;
+  }
+  const removeBtn = target.closest<HTMLElement>("[data-saved-remove]");
+  if (removeBtn) {
+    try {
+      const db = await openDb();
+      try {
+        await deleteSavedPuzzle(db, lcUser(), removeBtn.dataset.savedRemove!);
+      } finally {
+        db.close();
+      }
+    } catch (err: any) {
+      showToast(`Couldn't remove: ${err.message ?? err}`);
+      return;
+    }
+    await refreshSavedPositions();
+  }
+});
+
+let tryTarget: Puzzle | null = null;
+let tryRewarded = false; // a position only counts toward Today once per visit to it
+
+function startTry(p: Puzzle) {
+  stopReviewAutoplay();
+  preserveBotGameForLater();
+  tryTarget = p;
+  tryRewarded = false;
+  expandCard("play-section");
+  const board = ensurePlayBoard();
+  board.reset(p.sideToMove, p.fenBefore); // the mover is the one to move, so the board comes up unlocked
+  clearOverlayState();
+  board3dInstance?.setPosition(board.getFen());
+  refreshBoard3DSelection(board);
+  tryPanel.style.display = "";
+  tryStatus.textContent = `Your turn as ${p.sideToMove}. Find a better move than ${p.playedSan} — it cost ${(p.centipawnLoss / 100).toFixed(1)} pawns in the game.`;
+  tryAgainBtn.style.display = "none";
+  tryShowBtn.style.display = "none";
+  playBoardWrap.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function endTry() {
+  if (!tryTarget) return;
+  tryTarget = null;
+  tryPanel.style.display = "none";
+}
+
+function onTryMove(uci: string, san: string) {
+  const p = tryTarget;
+  if (!p || !playBoard) return;
+  playBoard.setLocked(true);
+  // The engine's first choice is the answer. If the position was already
+  // searched for the heatmap, another top-tier move counts too.
+  const lines = cachedCandidateLines(p.fenBefore);
+  const alsoStrong = lines
+    ? buildCandidates(p.fenBefore, lines).some((c) => c.uci === uci && (c.tier === "best" || c.tier === "excellent"))
+    : false;
+  const isBest = uci === p.bestMoveUci;
+  const correct = isBest || alsoStrong;
+  const reason = explainMove(explainInputFromPuzzle(p)).join(" ");
+  const verdict = isBest
+    ? `✅ Yes — ${p.bestMoveSan} was the move.`
+    : correct
+      ? `✅ ${san} is also one of the engine's top moves. Its first choice was ${p.bestMoveSan}.`
+      : `❌ Not quite — ${san} isn't what the engine wanted. It preferred ${p.bestMoveSan}.`;
+  tryStatus.textContent = `${verdict} In the game you played ${p.playedSan}. ${reason}`.trim();
+  tryAgainBtn.style.display = "";
+  tryShowBtn.style.display = correct ? "none" : "";
+
+  recordAttempt(lcUser(), p.id, correct);
+  if (correct) {
+    flash(playBoardWrap, "good");
+    playSuccessSound();
+    confetti(playBoardWrap, 0.7);
+    if (!tryRewarded) {
+      tryRewarded = true;
+      bumpToday(lcUser(), "review");
+      renderTodaySection();
+    }
+  } else {
+    shake(playBoardWrap);
+    flash(playBoardWrap, "bad");
+    playFailSound();
+  }
+  refreshAchievements();
+  void refreshSavedPositions(); // the "solved" badge on a saved card
+  board3dInstance?.setPosition(playBoard.getFen());
+}
+
+tryAgainBtn.addEventListener("click", () => {
+  const p = tryTarget;
+  if (p) startTry(p);
+});
+
+tryShowBtn.addEventListener("click", () => {
+  const p = tryTarget;
+  if (!p || !playBoard) return;
+  playBoard.showPosition(p.fenBefore);
+  const best: OverlayArrow = {
+    from: p.bestMoveUci.slice(0, 2) as Square,
+    to: p.bestMoveUci.slice(2, 4) as Square,
+    color: getClassColor("best"),
+    kind: "best",
+  };
+  applyOverlay([best], []);
+  board3dInstance?.setPosition(playBoard.getFen());
+  tryShowBtn.style.display = "none";
+});
+
+tryDoneBtn.addEventListener("click", () => {
+  const p = tryTarget;
+  endTry();
+  if (review) {
+    showReviewStep(reviewIndex);
+  } else if (p && playBoard) {
+    playBoard.showPosition(p.fenBefore);
+    clearOverlayState();
+    board3dInstance?.setPosition(playBoard.getFen());
+    setStatus(playStatus, "Click “New game” to play again.");
+  }
+});
+
+reviewTryBtn.addEventListener("click", () => {
+  const step = currentReviewStep();
+  const p = review && step ? puzzleFromStep(review, step, reviewOpening) : null;
+  if (p) startTry(p);
+});
+
+// --- Game picker: swipeable cards for the synced games ---
+
+const pickerSection = document.querySelector<HTMLElement>("#picker-section")!;
+const pickerOutput = document.querySelector<HTMLDivElement>("#picker-output")!;
+const pickerStatus = document.querySelector<HTMLParagraphElement>("#picker-status")!;
+
+let pickerGames: GameRecord[] = [];
+let pickerFilter: PickerFilter = "all";
+let pickerBusyId: string | null = null;
+
+function renderPicker() {
+  const track = document.getElementById("picker-track");
+  const scrollLeft = track?.scrollLeft ?? 0; // keep the viewer's place when a card flips to "Analyzing…"
+  pickerOutput.innerHTML = renderGamePicker(
+    buildPickerCards(pickerGames, pickerFilter),
+    pickerCounts(pickerGames),
+    pickerFilter,
+    pickerBusyId,
+  );
+  const next = document.getElementById("picker-track");
+  if (next) next.scrollLeft = scrollLeft;
+}
+
+function updatePicker(games: GameRecord[]) {
+  pickerGames = games;
+  if (games.length) {
+    clearEmptyFor("picker-section");
+    pickerSection.style.display = "";
+    renderPicker();
+  } else {
+    emptyFor("picker-section");
+  }
+  void refreshSavedPositions();
+}
+
+async function openPickedGame(id: string) {
+  if (pickerBusyId) return;
+  let analyzedNow = false;
+  try {
+    const db = await openDb();
+    try {
+      const game = await getGame(db, id);
+      if (!game) {
+        setStatus(pickerStatus, "That game isn't in your synced data.", "error");
+        return;
+      }
+      let moves = game.analyzed ? await getMoveAnalysesForGame(db, id) : [];
+      if (moves.length === 0) {
+        pickerBusyId = id;
+        renderPicker();
+        setStatus(pickerStatus, "Analyzing this game… 0%");
+        const engine = await getAnalysisEngine();
+        moves = await analyzeGame(engine, game, DEFAULT_ANALYSIS_OPTIONS, (done, total) => {
+          setStatus(pickerStatus, `Analyzing this game… ${Math.round((done / total) * 100)}%`);
+        });
+        await putMoveAnalyses(db, moves);
+        await markGameAnalyzed(db, game);
+        analyzedNow = true;
+      }
+      setStatus(pickerStatus, "");
+      openReviewForPgn(game.pgn, moves, game.userColor, game.chessComUuid, game.openingName);
+    } finally {
+      db.close();
+    }
+  } catch (err: any) {
+    setStatus(pickerStatus, `Couldn't open that game: ${err.message ?? err}`, "error");
+  } finally {
+    pickerBusyId = null;
+    renderPicker();
+  }
+  if (analyzedNow) void refreshProfile(); // the new analysis feeds every stat on the page
+}
+
+pickerSection.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  const filterBtn = target.closest<HTMLElement>("[data-picker-filter]");
+  if (filterBtn) {
+    pickerFilter = filterBtn.dataset.pickerFilter as PickerFilter;
+    renderPicker();
+    return;
+  }
+  const navBtn = target.closest<HTMLElement>("[data-picker-nav]");
+  if (navBtn) {
+    const track = document.getElementById("picker-track");
+    track?.scrollBy({ left: parseInt(navBtn.dataset.pickerNav!, 10) * track.clientWidth * 0.8, behavior: "smooth" });
+    return;
+  }
+  const card = target.closest<HTMLButtonElement>("[data-game-id]");
+  if (card && !card.disabled) void openPickedGame(card.dataset.gameId!);
+});
+
+/** A review or a puzzle takes over the shared board. A bot game in progress
+ * isn't lost -- it is saved as it is played -- but its "resume" banner only
+ * shows on page load, so bring it back the moment the board is taken. */
+function preserveBotGameForLater() {
+  if (review || tryTarget) return; // the board is already showing something other than the bot game
+  if (gameReportedThisGame || sanHistory.length === 0) return;
+  if (loadSavedBotGame()) resumeBanner.style.display = "";
+}
+
+void refreshSavedPositions(); // positions saved on an earlier visit
 
 async function runPostGameReport(board: PlayBoard) {
   postGameReportSection.style.display = "";
@@ -1348,7 +1850,11 @@ async function maybePlayBotMove(board: PlayBoard) {
       botEngine = new Engine();
       await botEngine.init();
     }
-    const move = await chooseBotMove(botEngine, board.getFen(), elo);
+    const fenWhenAsked = board.getFen();
+    const move = await chooseBotMove(botEngine, fenWhenAsked, elo);
+    // A review or puzzle may have taken the board while the bot was thinking;
+    // its move belongs to a position that is no longer there.
+    if (review || tryTarget || board.getFen() !== fenWhenAsked) return;
     board.applyMove(move.uci);
     sanHistory.push(move.san);
     renderMoveList();
@@ -1381,6 +1887,10 @@ function checkHangWarning(board: PlayBoard) {
 function ensurePlayBoard(): PlayBoard {
   if (!playBoard) {
     playBoard = new PlayBoard(playBoardWrap, (uci, san) => {
+      if (tryTarget) {
+        onTryMove(uci, san);
+        return;
+      }
       sanHistory.push(san);
       renderMoveList();
       playSoundForSan(san);
@@ -1405,6 +1915,7 @@ botNewGameBtn.addEventListener("click", async () => {
   playHangWarning.style.display = "none";
   postGameReportSection.style.display = "none";
   exitReview();
+  endTry();
   setStatus(drillObjective, "");
   clearSavedBotGame();
 
@@ -1421,6 +1932,7 @@ botNewGameBtn.addEventListener("click", async () => {
 
 botUndoBtn.addEventListener("click", async () => {
   if (!playBoard) return;
+  endTry();
   // A review displays positions on this board, which loses the game's own
   // move history -- so undoing out of a review rebuilds the real game from
   // the reviewed PGN first, and undoes from there.
@@ -1459,19 +1971,21 @@ if (savedGame) {
 }
 
 resumeBtn.addEventListener("click", async () => {
-  if (!savedGame) return;
+  const resuming = loadSavedBotGame(); // read now: a review may have interrupted a game since the page loaded
+  if (!resuming) return;
   resumeBanner.style.display = "none";
-  humanColor = savedGame.humanColor;
+  humanColor = resuming.humanColor;
   botColorSelect.value = humanColor;
-  botEloInput.value = String(savedGame.elo);
-  botEloValue.textContent = `${savedGame.elo} Elo`;
+  botEloInput.value = String(resuming.elo);
+  botEloValue.textContent = `${resuming.elo} Elo`;
   gameReportedThisGame = false;
   lastAnnotatedPgn = null;
   postGameReportSection.style.display = "none";
   exitReview();
+  endTry();
 
   const board = ensurePlayBoard();
-  board.loadFromPgn(humanColor, savedGame.pgn);
+  board.loadFromPgn(humanColor, resuming.pgn);
   sanHistory = board.getSanHistory();
   renderMoveList();
   setStatus(playStatus, "Game resumed.", "ok");
@@ -1722,7 +2236,7 @@ importDataInput.addEventListener("change", async () => {
       const result = await importAllData(db, data);
       setStatus(
         dataIoLog,
-        `Imported ${result.games} games, ${result.moveAnalysis} analyzed moves, ${result.skillSnapshots} progress snapshots, ${result.rivalSnapshots} rival snapshots. Merged with anything already here.`,
+        `Imported ${result.games} games, ${result.moveAnalysis} analyzed moves, ${result.skillSnapshots} progress snapshots, ${result.rivalSnapshots} rival snapshots, ${result.savedPuzzles} saved positions. Merged with anything already here.`,
         "ok",
       );
       await refreshProfile();
@@ -2212,6 +2726,7 @@ async function refreshProfile() {
     emptyFor("rivals-section");
   }
 
+  updatePicker(allGames);
   lastGamesSynced = allGames.length;
   // One-time puzzle-rating seed from the visitor's most recent rated game.
   if (currentUsername) {

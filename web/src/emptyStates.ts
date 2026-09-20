@@ -27,6 +27,13 @@ interface EmptyStateConfig {
 // Order mirrors the DOM so the seeded page reads top-to-bottom sensibly.
 const EMPTY_STATES: EmptyStateConfig[] = [
   {
+    sectionId: "picker-section",
+    outputId: "picker-output",
+    line: "Your synced games, as cards you can swipe through. Open one to see the best move in every position, the move you played, and a short reason it was better or worse.",
+    ctaLabel: "Sync your games",
+    skeleton: "rows",
+  },
+  {
     sectionId: "focus-section",
     outputId: "focus-output",
     line: "Once a few of your games are analyzed, this reads out the single area your play is weakest in right now — and one concrete thing to practice for it.",

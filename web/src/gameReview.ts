@@ -25,6 +25,8 @@ export interface ReviewStep {
   san: string;
   from: Square;
   to: Square;
+  uci: string; // the move as UCI ("e2e4", "e7e8q")
+  fenBefore: string; // the position the move was chosen in -- what "the best move here" is about
   fenAfter: string; // the position this step puts on the board
   // Grading, present only when analysis covered this ply -- a partly
   // analyzed game still reviews, it just has ungraded steps.
@@ -32,9 +34,19 @@ export interface ReviewStep {
   centipawnLoss?: number;
   bestMoveSan?: string;
   bestMoveUci?: string;
+  // Extra facts from the same record, carried so the explanation and the
+  // candidate view can say more than a tier. Evals are White-relative.
+  blunderTag?: string;
+  moveRank?: number;
+  gamePhase?: "opening" | "middlegame" | "endgame";
+  evalBeforeCp?: number;
+  evalBeforeMate?: number;
+  evalAfterCp?: number;
+  evalAfterMate?: number;
 }
 
 export interface ReviewGame {
+  gameId?: string; // the synced game's id, when there is one -- a bot game or a pasted PGN has none
   pgn: string; // kept so a caller can rebuild the real game (e.g. Undo after a review)
   startFen: string; // the position before ply 1 -- not always the standard start (handicap games)
   humanColor: "white" | "black";
@@ -64,6 +76,23 @@ export function shouldShowBetterMove(step: ReviewStep): boolean {
   return SHOW_BETTER_MOVE_FOR.has(step.classification);
 }
 
+/** The engine's move belongs to the position BEFORE the step, but the board
+ * shows the position AFTER it. If the better move starts on a square the
+ * played move just left or landed on, an arrow drawn on the "after" board
+ * would start from an empty square (or from the wrong piece), so it is
+ * skipped there. The "before" view draws it correctly in every case. */
+export function betterMoveArrowFitsAfterBoard(step: ReviewStep): boolean {
+  if (!step.bestMoveUci) return false;
+  const from = step.bestMoveUci.slice(0, 2);
+  return from !== step.from && from !== step.to;
+}
+
+/** A step worth turning into a puzzle: the reviewer's own move that lost
+ * something, where the engine had a different move in mind. */
+export function canPracticeStep(step: ReviewStep): boolean {
+  return step.isHuman && !!step.bestMoveUci && step.bestMoveUci !== step.uci && shouldShowBetterMove(step);
+}
+
 /** One step per half-move of `pgn`, graded from whichever `moves` records
  * match by ply. Records for other games (or other plies) are ignored, so
  * passing a whole account's analysis rows is harmless. */
@@ -71,6 +100,7 @@ export function buildReview(
   pgn: string,
   moves: MoveAnalysisRecord[],
   humanColor: "white" | "black",
+  gameId?: string,
 ): ReviewGame {
   const chess = new Chess();
   chess.loadPgn(pgn);
@@ -94,15 +124,34 @@ export function buildReview(
       san: move.san,
       from: move.from,
       to: move.to,
+      uci: move.from + move.to + (move.promotion ?? ""),
+      fenBefore: move.before,
       fenAfter: move.after,
       classification: graded?.classification,
       centipawnLoss: graded?.centipawnLoss,
       bestMoveSan: graded?.bestMoveSan,
       bestMoveUci: graded?.bestMoveUci,
+      blunderTag: graded?.blunderTag,
+      moveRank: graded?.moveRank,
+      gamePhase: graded?.gamePhase,
+      evalBeforeCp: graded?.evalBeforeCp,
+      evalBeforeMate: graded?.evalBeforeMate,
+      evalAfterCp: graded?.evalAfterCp,
+      evalAfterMate: graded?.evalAfterMate,
     };
   });
 
-  return { pgn, startFen, humanColor, steps };
+  return { gameId, pgn, startFen, humanColor, steps };
+}
+
+/** The reviewer's costliest mistakes and blunders, worst first -- the
+ * "critical positions" of one game, the ones worth practicing. Only moves
+ * with a concrete better move qualify. */
+export function keyMoments(review: ReviewGame, count = 3): ReviewStep[] {
+  return review.steps
+    .filter((s) => canPracticeStep(s) && (s.classification === "mistake" || s.classification === "blunder"))
+    .sort((a, b) => (b.centipawnLoss ?? 0) - (a.centipawnLoss ?? 0))
+    .slice(0, count);
 }
 
 /** How many of the reviewer's own moves landed in each tier, in the
@@ -166,6 +215,24 @@ export function describeStep(review: ReviewGame, index: number): string {
     const tail = showLoss ? `, ${loss}cp lost.` : label.endsWith("!") ? "" : ".";
     parts.push(`— ${label}${tail}`);
     if (shouldShowBetterMove(step)) parts.push(`Engine preferred ${step.bestMoveSan}.`);
+  }
+  return parts.join(" ");
+}
+
+/** The caption for the "position before the move" view. */
+export function describeBefore(review: ReviewGame, index: number): string {
+  const step = review.steps[index];
+  if (!step) return "";
+  const who = step.isHuman ? "you played" : "your opponent played";
+  const parts = [`Position before ${moveLabel(step)} — ${who} ${step.san}`];
+  if (step.classification && step.isHuman) {
+    parts[0] += ` (${REVIEW_QUALITY_LABELS[step.classification] ?? step.classification})`;
+  }
+  parts[0] += ".";
+  if (step.bestMoveSan && step.bestMoveSan !== step.san) {
+    parts.push(`The engine's top choice was ${step.bestMoveSan}.`);
+  } else if (step.bestMoveSan) {
+    parts.push("That was also the engine's top choice.");
   }
   return parts.join(" ");
 }

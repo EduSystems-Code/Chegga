@@ -10,6 +10,7 @@
 
 import { getClassColor } from "./classificationColors";
 import { moveLabel, tallyHumanQuality, REVIEW_QUALITY_LABELS, type ReviewGame } from "./gameReview";
+import { formatCandidateEval, isShadedTier, type Candidate } from "./candidateMoves";
 
 function escapeAttr(text: string): string {
   return text.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]!);
@@ -61,4 +62,33 @@ export function renderQualityTally(review: ReviewGame): string {
     })
     .join("");
   return `<div class="quality-tally">${items}</div>`;
+}
+
+/** The ranked candidate moves for the position on the board. Each is a
+ * button: tapping one draws it as an arrow. `playedUci` marks the move that
+ * was actually played. */
+export function renderCandidateList(
+  candidates: Candidate[],
+  opts: { playedUci?: string; playedSan?: string; previewUci?: string | null },
+): string {
+  if (!candidates.length) return "";
+  const chips = candidates
+    .map((c) => {
+      const color = getClassColor(c.tier);
+      const played = c.uci === opts.playedUci;
+      const classes = ["candidate-chip", played ? "candidate-chip-played" : "", c.uci === opts.previewUci ? "candidate-chip-preview" : ""]
+        .filter(Boolean)
+        .join(" ");
+      const label = REVIEW_QUALITY_LABELS[c.tier] ?? c.tier;
+      const title = `${c.san}: ${label}${c.gapCp > 0 ? `, ${c.gapCp}cp behind the best move` : ""}${played ? " — the move you played" : ""}`;
+      return `<button type="button" class="${classes}" data-candidate="${escapeAttr(c.uci)}" style="--chip-color:${color}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"><span class="quality-dot" style="background:${color}"></span><span class="cand-san">${escapeAttr(c.san)}</span><span class="cand-eval">${escapeAttr(formatCandidateEval(c))}</span>${played ? `<span class="cand-tag">played</span>` : ""}</button>`;
+    })
+    .join("");
+  const playedListed = opts.playedUci ? candidates.some((c) => c.uci === opts.playedUci) : true;
+  const outside =
+    !playedListed && opts.playedSan
+      ? `<p class="candidate-note">You played ${escapeAttr(opts.playedSan)}, which is outside the engine's top ${candidates.length}.</p>`
+      : "";
+  const shaded = candidates.filter((c) => isShadedTier(c.tier)).length;
+  return `<div class="candidate-list" role="group" aria-label="The engine's best moves in this position">${chips}</div>${outside}<p class="candidate-legend">${shaded} strong move${shaded === 1 ? "" : "s"} shaded on the board. Tap one to see it.</p>`;
 }

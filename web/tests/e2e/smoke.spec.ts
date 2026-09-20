@@ -61,9 +61,29 @@ test.describe("landing page smoke", () => {
       "#review-last",
       "#review-autoplay",
       "#review-worst",
+      "#review-why",
+      "#review-before",
+      "#review-candidates",
+      "#review-try",
+      "#review-save",
+      "#review-save-key",
+      "#try-panel",
     ]) {
       await expect(page.locator(id)).toBeAttached();
     }
+    await expect(page.locator("#try-panel")).toBeHidden();
+  });
+
+  // The game picker needs synced games, so before a username is connected
+  // it should show its designed waiting state with a way to get started,
+  // not vanish or sit empty (the seeded-game run is review-picker.spec.ts).
+  test("the game picker shows a waiting state before there are games", async ({ page }) => {
+    await page.goto("/");
+    const section = page.locator("#picker-section");
+    await expect(section).toBeVisible();
+    await expect(section.locator(".empty-state")).toBeVisible();
+    await expect(section.locator("[data-empty-cta]")).toBeVisible();
+    await expect(page.locator('a[href="#picker-section"]')).toBeAttached(); // and it is in the jump nav
   });
 
   test("body does not scroll horizontally on a phone viewport", async ({ page }) => {
