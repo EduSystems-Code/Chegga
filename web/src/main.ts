@@ -168,7 +168,8 @@ import { renderGamePicker, renderSavedPositions } from "./gamePickerView";
 import { puzzleFromStep } from "./savedPuzzles";
 import { shouldShowTutorial } from "./firstRun";
 import { startTutorial, type TutorialResult } from "./tutorial";
-import { getLastSite, setLastSite, syncLichess, SITE_NAMES, type Site } from "./siteSync";
+import { getLastSite, setLastSite, syncLichess, usernameProblem, SITE_NAMES, type Site } from "./siteSync";
+import { idbHistoryStore, syncLichessFullHistory } from "./lichessHistory";
 import {
   playMoveSound,
   playCaptureSound,
@@ -397,6 +398,10 @@ app.innerHTML = `
       <div id="sync-progress"></div>
       <p id="full-sync-prompt" class="status-line status-ok" style="display:none">
         <span id="full-sync-prompt-text"></span> <button type="button" id="full-sync-btn">Get my full history</button>
+      </p>
+      <p id="lichess-history" class="status-line status-ok" style="display:none">
+        <span id="lichess-history-text"></span> <button type="button" id="lichess-history-btn">Get my full history</button>
+        <button type="button" id="lichess-history-cancel" style="display:none">Cancel</button>
       </p>
       <h3 style="margin-top:24px">Analyze more games</h3>
       <p class="tagline" style="margin-bottom:16px">
@@ -2115,6 +2120,9 @@ async function runLichessSync(username: string) {
         "ok",
       );
       db.close();
+      if (isFirstEverSync && !result.fullyCaughtUp) {
+        lichessHistoryText.textContent = `That's your ${result.gamesAdded} most recent games.`;
+      }
       await refreshProfile();
       if (isFirstEverSync) await runAnalyzeRecent(QUICK_SYNC_ANALYZE_COUNT);
     } catch (err) {
@@ -2237,6 +2245,91 @@ fullSyncBtn.addEventListener("click", async () => {
   } finally {
     fullSyncBtn.disabled = false;
   }
+});
+
+// Lichess "Get my full history" -- shown only while the site picker is on
+// Lichess (Chess.com keeps its own control above). Reads the whole account in
+// pages, newest first; it stores games only and never starts analysis. Stopping
+// it, or a failure, keeps what is saved, and the next click resumes below the
+// oldest stored game (lichessHistory.ts).
+const lichessHistory = document.querySelector<HTMLParagraphElement>("#lichess-history")!;
+const lichessHistoryText = document.querySelector<HTMLSpanElement>("#lichess-history-text")!;
+const lichessHistoryBtn = document.querySelector<HTMLButtonElement>("#lichess-history-btn")!;
+const lichessHistoryCancelBtn = document.querySelector<HTMLButtonElement>("#lichess-history-cancel")!;
+let lichessHistoryAbort: AbortController | null = null;
+
+function updateLichessHistoryVisibility() {
+  lichessHistory.style.display = siteSelect.value === "lichess" ? "" : "none";
+}
+siteSelect.addEventListener("change", updateLichessHistoryVisibility);
+updateLichessHistoryVisibility();
+
+lichessHistoryBtn.addEventListener("click", async () => {
+  if (lichessHistoryAbort) return;
+  const username = usernameInput.value.trim();
+  const problem = usernameProblem(username);
+  if (problem) {
+    setStatus(syncLog, problem, "error");
+    return;
+  }
+  if (syncBtn.disabled) {
+    setStatus(syncLog, "A sync is already running. Try again when it finishes.", "error");
+    return;
+  }
+
+  const abort = new AbortController();
+  lichessHistoryAbort = abort;
+  syncBtn.disabled = true;
+  siteSelect.disabled = true;
+  lichessHistoryText.textContent = "";
+  lichessHistoryBtn.style.display = "none";
+  lichessHistoryCancelBtn.disabled = false;
+  lichessHistoryCancelBtn.style.display = "";
+  currentUsername = username;
+  currentSite = "lichess";
+  try {
+    localStorage.setItem(LAST_USERNAME_KEY, username);
+  } catch {
+    // best-effort only
+  }
+  setLastSite("lichess");
+  writeHashState({ u: username, s: "lichess" });
+  setStatus(syncLog, `Getting your full history for ${username}…`);
+
+  let db: IDBDatabase | null = null;
+  try {
+    db = await openDb();
+    const result = await syncLichessFullHistory(idbHistoryStore(db), username, {
+      signal: abort.signal,
+      onProgress: (text) => setStatus(syncLog, text),
+    });
+    if (result.cancelled) {
+      setStatus(syncLog, `Stopped: ${result.gamesAdded} new games synced so far. What's already synced is saved — click "Get my full history" again to resume.`);
+    } else if (result.emptyAccount) {
+      setStatus(syncLog, `Lichess has no games for "${username}" yet.`);
+    } else {
+      setStatus(syncLog, `${result.gamesAdded} new games synced. Full history is up to date.`, "ok");
+    }
+  } catch (err: any) {
+    setStatus(syncLog, `Full sync stopped partway: ${err.message ?? err}. What's already synced is saved — click "Get my full history" again to resume.`, "error");
+  } finally {
+    db?.close();
+    lichessHistoryAbort = null;
+    syncBtn.disabled = false;
+    siteSelect.disabled = false;
+    lichessHistoryCancelBtn.style.display = "none";
+    lichessHistoryBtn.style.display = "";
+  }
+  try {
+    await refreshProfile(); // show what was saved, even after a stop or a failure
+  } catch {
+    // the sync message above is the one that matters
+  }
+});
+
+lichessHistoryCancelBtn.addEventListener("click", () => {
+  lichessHistoryCancelBtn.disabled = true;
+  lichessHistoryAbort?.abort();
 });
 
 // Auto-fill + auto-sync on load if a username was remembered -- this is
@@ -3904,6 +3997,7 @@ async function onTutorialDone(result: TutorialResult) {
   currentSite = result.site;
   usernameInput.value = result.username;
   siteSelect.value = result.site;
+  updateLichessHistoryVisibility();
   try {
     localStorage.setItem(LAST_USERNAME_KEY, result.username);
   } catch {
@@ -3921,6 +4015,9 @@ async function onTutorialDone(result: TutorialResult) {
     if (result.site === "chesscom" && !result.sync.fullyCaughtUp) {
       fullSyncPromptText.textContent = `That's your ${result.sync.gamesAdded} most recent games.`;
       fullSyncPrompt.style.display = "";
+    }
+    if (result.site === "lichess" && !result.sync.fullyCaughtUp) {
+      lichessHistoryText.textContent = `That's your ${result.sync.gamesAdded} most recent games.`;
     }
   }
   try {
