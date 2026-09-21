@@ -93,6 +93,7 @@ async function playLesson(page: Page, opts: { expectSite?: string } = {}) {
   await expect(title(page)).toHaveText("The position");
   await expect(page.locator("#tutorial-say")).toContainText("You are playing White");
   await expect(page.locator("#tutorial-board .play-candidate-tint")).toHaveCount(0); // the heatmap is not on yet
+  await expect(page.locator("#tutorial-legend")).toBeHidden(); // and neither is its legend
   await next(page).click();
 
   await expect(title(page)).toHaveText("The heatmap");

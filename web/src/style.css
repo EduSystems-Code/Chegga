@@ -2598,6 +2598,13 @@ section.card[data-tier="primary"]:hover { transform: translateY(-1px); }
   font-size: 0.8rem;
   color: var(--text);
 }
+/* `display: flex` above beats the browser's own [hidden] rule, so the
+   legend showed before the heatmap step turned it on (real bug, found
+   testing against real accounts: the "position" beat showed the legend
+   even though the heatmap was still off). */
+.tutorial-legend[hidden] {
+  display: none;
+}
 .tutorial-legend-item {
   display: inline-flex;
   align-items: center;
