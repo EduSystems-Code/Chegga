@@ -43,20 +43,20 @@ describe("describePosition", () => {
     ]);
   });
 
-  it("points out an opponent piece that is under attack and loose", () => {
+  it("says an opponent piece is loose without naming it -- that would be the answer", () => {
     const lines = describePosition(LOOSE_KNIGHT, "white");
-    expect(lines).toContain("Your opponent's knight on d5 is under attack and not fully protected.");
+    expect(lines).toContain("One of your opponent's pieces is under attack and not fully protected.");
   });
 
   it("warns about the player's own loose piece when the opponent has none", () => {
     const lines = describePosition(LOOSE_KNIGHT, "black");
-    expect(lines).toContain("Watch your knight on d5: it is under attack and not fully protected.");
+    expect(lines).toContain("One of your own pieces is under attack and not fully protected.");
   });
 
   it("says when the player is ahead or behind", () => {
     const upAPiece = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKB1R w KQkq - 0 1"; // White has no g1 knight
-    expect(describePosition(upAPiece, "black")).toContain("You are ahead by a piece.");
-    expect(describePosition(upAPiece, "white")).toContain("You are behind by a piece.");
+    expect(describePosition(upAPiece, "black")).toContain("You are ahead by about 3 pawns of material.");
+    expect(describePosition(upAPiece, "white")).toContain("You are behind by about 3 pawns of material.");
   });
 });
 
@@ -101,7 +101,7 @@ describe("explainWhyBest", () => {
     const m = moment({ fenBefore: LOOSE_KNIGHT, bestSan: "exd5", bestUci: "e4d5", gamePhase: "opening" });
     const lines = explainWhyBest(m, [line(300, ["e4d5", "e7e6", "d2d4"])]);
     expect(lines[0]).toBe("exd5 captures the knight on d5.");
-    expect(lines[1]).toBe("Follow the engine's line (exd5 e6 d4) and you come out a piece ahead.");
+    expect(lines[1]).toBe("Follow the engine's line (exd5 e6 d4) and you come out ahead by about 3 pawns of material.");
   });
 
   it("still says something when there is no deeper line", () => {
@@ -123,16 +123,24 @@ describe("buildBeats", () => {
   });
 
   it("opens with the player's own game, and holds the answer back", () => {
-    expect(beats[0].lines[0]).toBe("I found a move worth a second look in your game against rival, played May 28.");
+    expect(beats[0].lines[0]).toBe("Here is a move worth a second look, from your game against rival, played May 28.");
     expect(beats[0].lines[1]).toBe("On move 3, playing White, you had a better move than the one you played.");
     expect(beats[0].lines.join(" ")).not.toContain("Bc4");
     expect(beats[1].lines.join(" ")).not.toContain("Bc4");
   });
 
-  it("counts the shaded moves", () => {
-    expect(beats[2].lines).toContain("3 moves are shaded here.");
+  it("names no square before the heatmap -- a square is as good as the answer", () => {
+    const loose = buildBeats(moment({ fenBefore: LOOSE_KNIGHT, bestSan: "exd5", bestUci: "e4d5" }), deep, {
+      shadedCount: 2,
+    });
+    expect(loose[0].lines.join(" ")).not.toMatch(/[a-h][1-8]/);
+    expect(loose[1].lines.join(" ")).not.toMatch(/[a-h][1-8]/);
+  });
+
+  it("counts the shaded squares, which is what the heatmap actually draws", () => {
+    expect(beats[2].lines).toContain("3 squares are shaded here.");
     const single = buildBeats(moment(), deep, { shadedCount: 1 });
-    expect(single[2].lines).toContain("Only one move is shaded here.");
+    expect(single[2].lines).toContain("Only one square is shaded here.");
   });
 
   it("names the answer only from 'why it is best' onward", () => {
@@ -151,7 +159,7 @@ describe("buildBeats", () => {
     expect(text).toContain("Chess.com");
     expect(text).toContain("no password");
     expect(text).toContain("any game you have played, at any move");
-    expect(text).toContain("I saved this position");
+    expect(text).toContain("Chegga saved this position under Review a game");
   });
 
   it("says Lichess when the games came from Lichess", () => {
@@ -164,21 +172,21 @@ describe("buildBeats", () => {
     expect(example[0].lines[0]).toContain("example game");
     expect(example[5].lines[0]).toBe("In the example game, White played Qxe5+ instead.");
     expect(example[6].lines.join(" ")).toContain("Connect your username");
-    expect(example[6].lines.join(" ")).not.toContain("I saved this position");
+    expect(example[6].lines.join(" ")).not.toContain("Chegga saved this position");
   });
 
   it("says why the example is shown when the visitor's own games held nothing to teach from", () => {
     const example = buildBeats(moment({ isExample: true }), deep, {
       shadedCount: 1,
-      exampleNote: "I did not find a clear missed move in your latest games.",
+      exampleNote: "Chegga did not find a clear missed move in your newest games.",
     });
-    expect(example[0].lines[0]).toBe("I did not find a clear missed move in your latest games.");
+    expect(example[0].lines[0]).toBe("Chegga did not find a clear missed move in your newest games.");
     expect(example[0].lines[1]).toContain("example game");
   });
 
   it("nudges toward the asked-for move when a different legal move is played", () => {
     expect(nudgeLine("Nc3", moment())).toBe(
-      "Nc3 is a legal move, but it is not the one I am asking for. Try Bc4: the piece on f1 goes to c4.",
+      "Nc3 is legal, but it is not the move to find here. Try Bc4: the piece on f1 goes to c4.",
     );
   });
 });
