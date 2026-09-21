@@ -1,5 +1,18 @@
 import { test, expect } from "@playwright/test";
 
+// These specs are about the page itself, not the first-run tutorial (see
+// tutorial.spec.ts), so they start as a visitor who has already been through it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("chegga-web:tutorial", "done");
+    } catch {
+      // blocked storage: the tutorial does not show then either
+    }
+  });
+});
+
+
 // The pre-connect surface — everything a first-time visitor sees before
 // they type a username. This is what actually ships to a phone from a
 // shared link, so it is the highest-value thing to keep un-broken.
@@ -61,9 +74,29 @@ test.describe("landing page smoke", () => {
       "#review-last",
       "#review-autoplay",
       "#review-worst",
+      "#review-why",
+      "#review-before",
+      "#review-candidates",
+      "#review-try",
+      "#review-save",
+      "#review-save-key",
+      "#try-panel",
     ]) {
       await expect(page.locator(id)).toBeAttached();
     }
+    await expect(page.locator("#try-panel")).toBeHidden();
+  });
+
+  // The game picker needs synced games, so before a username is connected
+  // it should show its designed waiting state with a way to get started,
+  // not vanish or sit empty (the seeded-game run is review-picker.spec.ts).
+  test("the game picker shows a waiting state before there are games", async ({ page }) => {
+    await page.goto("/");
+    const section = page.locator("#picker-section");
+    await expect(section).toBeVisible();
+    await expect(section.locator(".empty-state")).toBeVisible();
+    await expect(section.locator("[data-empty-cta]")).toBeVisible();
+    await expect(page.locator('a[href="#picker-section"]')).toBeAttached(); // and it is in the jump nav
   });
 
   test("body does not scroll horizontally on a phone viewport", async ({ page }) => {

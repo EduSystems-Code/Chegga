@@ -28,7 +28,7 @@ export interface Puzzle {
   blunderTag?: string;
 }
 
-function difficultyFor(cpLoss: number): Difficulty {
+export function difficultyFor(cpLoss: number): Difficulty {
   if (cpLoss < 150) return "easy";
   if (cpLoss < 400) return "medium";
   return "hard";

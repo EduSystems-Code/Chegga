@@ -8,14 +8,17 @@
 //
 // No coachingReport store in v1 — coaching stays parked (see context.md).
 
+import type { Puzzle } from "./puzzleTrainer";
+
 const DB_NAME = "chegga-web";
 // v2 adds `skillSnapshots` (the growth-path feature's progress-over-time
 // store). v3 adds `curatedPuzzles` (the bundled Lichess CC0 puzzle
 // subset -- see curatedPuzzles.ts). v4 adds `rivalSnapshots` (the
-// since-last-visit head-to-head delta). onupgradeneeded only adds what's
-// missing, so a real v1/v2/v3 browser DB upgrades in place without losing
-// any existing data.
-const DB_VERSION = 4;
+// since-last-visit head-to-head delta). v5 adds `savedPuzzles` (positions a
+// visitor saved from the game review to practice later). onupgradeneeded
+// only adds what's missing, so a real v1-v4 browser DB upgrades in place
+// without losing any existing data.
+const DB_VERSION = 5;
 
 /** Real bug caught live (2026-08-26): a bare `indexedDB.open` with no
  * `onblocked` handler and no timeout can hang forever -- neither
@@ -98,6 +101,13 @@ export function openDb(): Promise<IDBDatabase> {
           keyPath: ["username", "dateStamp"], // one snapshot per calendar day per visitor
         });
         rivalSnapshots.createIndex("byUsername", "username", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("savedPuzzles")) {
+        const savedPuzzles = db.createObjectStore("savedPuzzles", {
+          keyPath: ["username", "id"], // the same position saved twice is one row
+        });
+        savedPuzzles.createIndex("byUsername", "username", { unique: false });
       }
     };
 
@@ -199,6 +209,14 @@ export interface RivalSnapshotRecord {
   timestamp: number; // unix ms, for ordering/display
   records: RivalSnapshotEntry[];
 }
+
+/** A position saved from the game review: everything a puzzle needs, so it
+ * stays practicable after the game itself is gone. `gameId` is "bot" for a
+ * position from a bot game (those analyses aren't stored). */
+export type SavedPuzzleRecord = Puzzle & {
+  username: string;
+  savedAt: number; // unix ms
+};
 
 export interface CuratedPuzzleRecord {
   id: string; // Lichess PuzzleId
@@ -402,19 +420,48 @@ export function getCuratedPuzzlesByOpening(db: IDBDatabase, opening: string): Pr
   return req(tx.objectStore("curatedPuzzles").index("byOpening").getAll(IDBKeyRange.only(opening)));
 }
 
+// --- Store helpers (positions saved from the game review) ---
+
+export function putSavedPuzzles(db: IDBDatabase, records: SavedPuzzleRecord[]): Promise<void> {
+  const tx = db.transaction("savedPuzzles", "readwrite");
+  const store = tx.objectStore("savedPuzzles");
+  for (const r of records) store.put(r);
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Newest first. */
+export function getSavedPuzzles(db: IDBDatabase, username: string): Promise<SavedPuzzleRecord[]> {
+  const tx = db.transaction("savedPuzzles", "readonly");
+  const index = tx.objectStore("savedPuzzles").index("byUsername");
+  return req(index.getAll(IDBKeyRange.only(username))).then((rows) => rows.sort((a, b) => b.savedAt - a.savedAt));
+}
+
+export function deleteSavedPuzzle(db: IDBDatabase, username: string, id: string): Promise<void> {
+  const tx = db.transaction("savedPuzzles", "readwrite");
+  tx.objectStore("savedPuzzles").delete([username, id]);
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 // --- Store helpers (export/import — a visitor's only copy of their data
 // lives in this one browser's IndexedDB; this is the escape hatch so
 // switching browsers/devices or clearing site data doesn't silently lose
 // hours of in-browser Stockfish analysis) ---
 
 export interface ExportedData {
-  formatVersion: 1 | 2 | 3;
+  formatVersion: 1 | 2 | 3 | 4;
   exportedAt: number; // unix ms
   games: GameRecord[];
   moveAnalysis: MoveAnalysisRecord[];
   syncState: SyncStateRecord[];
   skillSnapshots?: SkillSnapshotRecord[]; // absent on a v1 export -- treated as empty on import
   rivalSnapshots?: RivalSnapshotRecord[]; // absent before v3 -- treated as empty on import
+  savedPuzzles?: SavedPuzzleRecord[]; // absent before v4 -- treated as empty on import
 }
 
 function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
@@ -423,42 +470,65 @@ function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
 }
 
 export async function exportAllData(db: IDBDatabase): Promise<ExportedData> {
-  const [games, moveAnalysis, syncState, skillSnapshots, rivalSnapshots] = await Promise.all([
+  const [games, moveAnalysis, syncState, skillSnapshots, rivalSnapshots, savedPuzzles] = await Promise.all([
     getAll<GameRecord>(db, "games"),
     getAll<MoveAnalysisRecord>(db, "moveAnalysis"),
     getAll<SyncStateRecord>(db, "syncState"),
     getAll<SkillSnapshotRecord>(db, "skillSnapshots"),
     getAll<RivalSnapshotRecord>(db, "rivalSnapshots"),
+    getAll<SavedPuzzleRecord>(db, "savedPuzzles"),
   ]);
-  return { formatVersion: 3, exportedAt: Date.now(), games, moveAnalysis, syncState, skillSnapshots, rivalSnapshots };
+  return {
+    formatVersion: 4,
+    exportedAt: Date.now(),
+    games,
+    moveAnalysis,
+    syncState,
+    skillSnapshots,
+    rivalSnapshots,
+    savedPuzzles,
+  };
 }
 
 /** Upserts every record from `data` into the current DB — safe to run
  * against a DB that already has some overlapping games (same upsert-by-key
  * semantics as sync), so importing into a browser that already has partial
  * data merges rather than duplicating or erroring. Accepts a v1 export (no
- * skillSnapshots), v2 (no rivalSnapshots), or v3 — an older backup
+ * skillSnapshots), v2 (no rivalSnapshots), v3 (no savedPuzzles), or v4 — an older backup
  * shouldn't become unreadable just because a new store was added later. */
 export async function importAllData(
   db: IDBDatabase,
   data: ExportedData,
-): Promise<{ games: number; moveAnalysis: number; syncState: number; skillSnapshots: number; rivalSnapshots: number }> {
-  if (![1, 2, 3].includes(data.formatVersion)) {
+): Promise<{
+  games: number;
+  moveAnalysis: number;
+  syncState: number;
+  skillSnapshots: number;
+  rivalSnapshots: number;
+  savedPuzzles: number;
+}> {
+  if (![1, 2, 3, 4].includes(data.formatVersion)) {
     throw new Error(`Unsupported export format version: ${(data as any).formatVersion}`);
   }
   const snapshots = data.skillSnapshots ?? [];
   const rivalSnaps = data.rivalSnapshots ?? [];
-  const tx = db.transaction(["games", "moveAnalysis", "syncState", "skillSnapshots", "rivalSnapshots"], "readwrite");
+  const saved = data.savedPuzzles ?? [];
+  const tx = db.transaction(
+    ["games", "moveAnalysis", "syncState", "skillSnapshots", "rivalSnapshots", "savedPuzzles"],
+    "readwrite",
+  );
   const gamesStore = tx.objectStore("games");
   const moveStore = tx.objectStore("moveAnalysis");
   const syncStore = tx.objectStore("syncState");
   const skillStore = tx.objectStore("skillSnapshots");
   const rivalStore = tx.objectStore("rivalSnapshots");
+  const savedStore = tx.objectStore("savedPuzzles");
   for (const g of data.games) gamesStore.put(g);
   for (const m of data.moveAnalysis) moveStore.put(m);
   for (const s of data.syncState) syncStore.put(s);
   for (const s of snapshots) skillStore.put(s);
   for (const s of rivalSnaps) rivalStore.put(s);
+  for (const p of saved) savedStore.put(p);
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -469,5 +539,6 @@ export async function importAllData(
     syncState: data.syncState.length,
     skillSnapshots: snapshots.length,
     rivalSnapshots: rivalSnaps.length,
+    savedPuzzles: saved.length,
   };
 }

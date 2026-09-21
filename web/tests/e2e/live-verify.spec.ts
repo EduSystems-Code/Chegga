@@ -1,5 +1,18 @@
 import { test, expect } from "@playwright/test";
 
+// These specs are about the page itself, not the first-run tutorial (see
+// tutorial.spec.ts), so they start as a visitor who has already been through it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("chegga-web:tutorial", "done");
+    } catch {
+      // blocked storage: the tutorial does not show then either
+    }
+  });
+});
+
+
 // Closes out the "owed" click-through from context.md for the
 // 2026-08-28/29/30 pushes: Featurebase panel, Tally iframe, jump-nav
 // offsets under the sticky header, and hero CTA behavior — run against

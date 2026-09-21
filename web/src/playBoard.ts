@@ -27,6 +27,23 @@ const LAST_MOVE_COLOR = "rgba(227, 168, 87, 0.18)";
 const CHECK_COLOR = "rgba(242, 85, 90, 0.35)";
 const DRAG_HOVER_COLOR = "rgba(227, 168, 87, 0.30)";
 const DRAG_START_PX = 4; // movement threshold before a pointerdown counts as a drag, not a tap
+const DEFAULT_ARROW_COLOR = "rgba(227,168,87,0.9)";
+
+/** One arrow on the board. `color` is any CSS color. */
+export interface BoardArrow {
+  from: Square;
+  to: Square;
+  color?: string;
+  width?: number; // stroke width in pixels
+}
+
+/** A translucent color wash on one square -- the candidate-move heatmap.
+ * `opacity` is 0-1; `color` is any CSS color. */
+export interface SquareTint {
+  square: Square;
+  color: string;
+  opacity: number;
+}
 
 export type GameStatus =
   | { over: false; inCheck: boolean }
@@ -56,7 +73,18 @@ export class PlayBoard {
   private onPlayerMove: (uci: string, san: string) => void;
   private pendingPromotion: { from: Square; to: Square } | null = null;
   private drag: DragState | null = null;
-  private arrow: { from: Square; to: Square } | null = null;
+  private arrows: BoardArrow[] = [];
+  private candidateTints = new Map<Square, SquareTint>();
+  // The heatmap "turning on": the next render fades the tints in one after
+  // another (in the order given), and the arrows in. One render only -- a
+  // later re-render (a tap on a square) must not replay it.
+  private tintOrder = new Map<Square, number>();
+  private animateTintsOnce = false;
+  private animateArrowsOnce = false;
+  // Each board draws its own SVG arrowheads; the marker ids must not
+  // collide between the several boards on one page.
+  private static nextUid = 0;
+  private readonly uid = PlayBoard.nextUid++;
   private heatmapMode: HeatmapMode = "off";
   private qualityFlash: { square: Square; color: string; label?: string; hold?: boolean } | null = null;
   private qualityFlashTimeout: number | null = null;
@@ -96,7 +124,7 @@ export class PlayBoard {
     this.lastMove = null;
     this.pendingPromotion = null;
     this.drag = null;
-    this.arrow = null;
+    this.clearAnnotations();
     this.clearQualityFlash();
     const sideToMove = this.chess.turn() === "w" ? "white" : "black";
     this.locked = sideToMove !== orientation;
@@ -114,7 +142,7 @@ export class PlayBoard {
     this.selected = null;
     this.pendingPromotion = null;
     this.drag = null;
-    this.arrow = null;
+    this.clearAnnotations();
     this.clearQualityFlash();
     const history = this.chess.history({ verbose: true });
     const last = history[history.length - 1];
@@ -136,7 +164,7 @@ export class PlayBoard {
     this.selected = null;
     this.pendingPromotion = null;
     this.drag = null;
-    this.arrow = null;
+    this.clearAnnotations();
     this.clearQualityFlash();
     this.lastMove = lastMove ?? null;
     this.locked = true;
@@ -194,7 +222,7 @@ export class PlayBoard {
     }
     this.selected = null;
     this.pendingPromotion = null;
-    this.arrow = null;
+    this.clearAnnotations();
     this.clearQualityFlash();
     const history = this.chess.history({ verbose: true });
     const last = history[history.length - 1];
@@ -219,8 +247,31 @@ export class PlayBoard {
   /** Draws (or clears, with undefined) a best-move arrow. Purely visual —
    * this board doesn't know or care that it came from an engine line. */
   showArrow(from?: Square, to?: Square): void {
-    this.arrow = from && to ? { from, to } : null;
+    this.arrows = from && to ? [{ from, to }] : [];
     this.render();
+  }
+
+  /** Draws several arrows at once, each in its own color (the review's
+   * best-move / played-move / preview arrows). An empty list clears them. */
+  showArrows(arrows: BoardArrow[], opts: { animate?: boolean } = {}): void {
+    this.arrows = arrows;
+    this.animateArrowsOnce = !!opts.animate;
+    this.render();
+  }
+
+  /** Washes squares with a color at a given strength -- the candidate-move
+   * heatmap. Replaces any earlier set; an empty list clears it. Purely
+   * presentational, like showArrow(). */
+  setCandidateTints(tints: SquareTint[], opts: { animate?: boolean } = {}): void {
+    this.candidateTints = new Map(tints.map((t) => [t.square, t]));
+    this.tintOrder = new Map(tints.map((t, i) => [t.square, i]));
+    this.animateTintsOnce = !!opts.animate;
+    this.render();
+  }
+
+  private clearAnnotations(): void {
+    this.arrows = [];
+    this.candidateTints.clear();
   }
 
   setHeatmapMode(mode: HeatmapMode): void {
@@ -487,7 +538,7 @@ export class PlayBoard {
     const move = this.chess.move({ from, to, promotion });
     this.selected = null;
     this.lastMove = { from, to };
-    this.arrow = null; // last position's best-move arrow doesn't apply to the new position
+    this.clearAnnotations(); // last position's arrows and tints don't apply to the new position
     this.render();
     this.onPlayerMove(from + to + (promotion ?? ""), move.san);
   }
@@ -531,6 +582,7 @@ export class PlayBoard {
         if (kingInCheckSquare === square) bg = CHECK_COLOR;
 
         const tint = this.heatmapMode === "control" ? this.controlTint(square) : null;
+        const candidate = this.candidateTints.get(square);
 
         const piece = this.chess.get(square);
         const dot = legalTargets.has(square) ? `<span class="play-legal-dot"></span>` : "";
@@ -544,6 +596,7 @@ export class PlayBoard {
         squaresHtml += `
           <div class="play-square" data-square="${square}" style="background:${bg}">
             ${tint ? `<span class="play-heatmap-tint" style="background:${tint}"></span>` : ""}
+            ${candidate ? `<span class="play-heatmap-tint play-candidate-tint${this.animateTintsOnce ? " play-candidate-tint-in" : ""}" style="background:${candidate.color};opacity:${candidate.opacity};--tint-opacity:${candidate.opacity}${this.animateTintsOnce ? `;animation-delay:${(this.tintOrder.get(square) ?? 0) * 110}ms` : ""}"></span>` : ""}
             ${pieceHtml}
             ${dot}
             ${quality ? `<span class="play-quality-ring${quality.hold ? " play-quality-hold" : ""}" style="--quality-color:${quality.color}"></span>` : ""}
@@ -565,31 +618,44 @@ export class PlayBoard {
         </div>`
       : "";
 
-    const arrowSvg = this.arrow ? this.renderArrow(displayFiles, displayRanks) : "";
+    const arrowSvg = this.arrows.length ? this.renderArrows(displayFiles, displayRanks) : "";
 
     this.container.innerHTML = `<div class="play-board">${squaresHtml}</div>${arrowSvg}${promoOverlay}`;
+    this.animateTintsOnce = false;
+    this.animateArrowsOnce = false;
   }
 
-  private renderArrow(displayFiles: string[], displayRanks: number[]): string {
-    if (!this.arrow) return "";
+  private renderArrows(displayFiles: string[], displayRanks: number[]): string {
     const squarePx = 100 / 8; // percent, so the overlay scales with the board regardless of actual pixel size
     const center = (square: Square) => {
       const file = displayFiles.indexOf(square[0]);
       const rank = displayRanks.indexOf(parseInt(square[1], 10));
       return { x: file * squarePx + squarePx / 2, y: rank * squarePx + squarePx / 2 };
     };
-    const from = center(this.arrow.from);
-    const to = center(this.arrow.to);
-    return `
-      <svg class="play-arrow-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <defs>
-          <marker id="play-arrowhead" markerWidth="3.2" markerHeight="3.2" refX="1.6" refY="1.6" orient="auto">
-            <path d="M0,0 L3.2,1.6 L0,3.2 Z" fill="rgba(227,168,87,0.9)"/>
-          </marker>
-        </defs>
+    const defs: string[] = [];
+    const lines: string[] = [];
+    this.arrows.forEach((arrow, i) => {
+      const color = arrow.color ?? DEFAULT_ARROW_COLOR;
+      const width = arrow.width ?? 1.4;
+      // The line is a fixed pixel width (non-scaling-stroke) while the head is
+      // in board units, so the head is sized directly rather than from the
+      // stroke width. 4.5 is what the original 1.4px arrow's head worked out to.
+      const head = width > 2 ? 5.4 : 4.5;
+      const markerId = `play-arrowhead-${this.uid}-${i}`;
+      const from = center(arrow.from);
+      const to = center(arrow.to);
+      defs.push(`
+        <marker id="${markerId}" markerUnits="userSpaceOnUse" markerWidth="${head}" markerHeight="${head}" refX="${head / 2}" refY="${head / 2}" orient="auto">
+          <path d="M0,0 L${head},${head / 2} L0,${head} Z" fill="${color}"/>
+        </marker>`);
+      lines.push(`
         <line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
-              stroke="rgba(227,168,87,0.9)" stroke-width="1.4" stroke-linecap="round"
-              marker-end="url(#play-arrowhead)" vector-effect="non-scaling-stroke"/>
+              stroke="${color}" stroke-width="${width}" stroke-linecap="round"
+              marker-end="url(#${markerId})" vector-effect="non-scaling-stroke"/>`);
+    });
+    return `
+      <svg class="play-arrow-layer${this.animateArrowsOnce ? " play-arrow-layer-in" : ""}" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <defs>${defs.join("")}</defs>${lines.join("")}
       </svg>`;
   }
 

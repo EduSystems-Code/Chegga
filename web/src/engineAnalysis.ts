@@ -91,6 +91,7 @@ export async function analyzeGame(
   engine: Engine,
   game: GameRecord,
   opts: AnalysisOptions = DEFAULT_ANALYSIS_OPTIONS,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<MoveAnalysisRecord[]> {
   const pgnGame = new Chess();
   pgnGame.loadPgn(game.pgn);
@@ -105,7 +106,9 @@ export async function analyzeGame(
   const pgnStartFen = pgnGame.getHeaders().FEN;
   const board = pgnStartFen ? new Chess(pgnStartFen) : new Chess();
   const boardsByPly: Chess[] = [new Chess(board.fen())];
+  const totalPositions = sanMoves.length + 1;
   const positionsInfo: AnalysisLine[][] = [await engine.analyse(board.fen(), opts)];
+  onProgress?.(1, totalPositions);
 
   const uciMoves: string[] = [];
   for (const san of sanMoves) {
@@ -113,6 +116,7 @@ export async function analyzeGame(
     uciMoves.push(move.from + move.to + (move.promotion ?? ""));
     boardsByPly.push(new Chess(board.fen()));
     positionsInfo.push(await engine.analyse(board.fen(), opts));
+    onProgress?.(positionsInfo.length, totalPositions);
   }
 
   const results: MoveAnalysisRecord[] = [];

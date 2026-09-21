@@ -37,6 +37,7 @@ const DEFAULT_EXPANDED_IDS = new Set([
   "focus-section",
   "road-section",
   "sync-section",
+  "picker-section",
   "profile-section",
   "puzzle-section",
   "play-section",

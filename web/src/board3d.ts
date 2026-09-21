@@ -142,12 +142,36 @@ function buildPieceGeometries(): Record<PieceType, THREE.BufferGeometry> {
   };
 }
 
+/** A candidate-move wash on one square. `color` is any CSS color. */
+export interface Board3DTint {
+  square: string;
+  color: string;
+  opacity: number;
+}
+
+/** A flat arrow lying on the board from one square's center to another's. */
+export interface Board3DArrow {
+  from: string;
+  to: string;
+  color: string;
+}
+
+function squareCenter(square: string): { x: number; z: number } {
+  return squarePos(square.charCodeAt(0) - 97, parseInt(square[1], 10) - 1);
+}
+
 export class Board3D {
   private container: HTMLElement;
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private pieceGroup = new THREE.Group();
+  // Candidate-move tints and arrows for the game review. Separate meshes
+  // laid over the squares -- not the squares' own emissive channel, which
+  // selection and the move-quality flash already own and reset.
+  private overlayGroup = new THREE.Group();
+  private overlayGeometries: THREE.BufferGeometry[] = [];
+  private overlayMaterials: THREE.Material[] = [];
   private squareMeshes: THREE.Mesh[] = [];
   private squareGeometry!: THREE.BufferGeometry;
   private baseMesh!: THREE.Mesh;
@@ -224,6 +248,7 @@ export class Board3D {
 
     this.buildBoard();
     this.scene.add(this.pieceGroup);
+    this.scene.add(this.overlayGroup);
 
     this.renderer.domElement.addEventListener("pointerdown", this.handlePointerDown);
     window.addEventListener("pointermove", this.handlePointerMove);
@@ -324,6 +349,79 @@ export class Board3D {
       mat.emissiveIntensity = 0;
       this.render();
     }, ms);
+  }
+
+  /** Replaces the review overlay: color washes on squares plus flat arrows.
+   * Pass empty lists (or call clearOverlays) to remove it. The picked
+   * squares are ordinary board squares, so tap-to-move raycasting -- which
+   * only tests the square meshes -- is unaffected. */
+  setOverlays(tints: Board3DTint[], arrows: Board3DArrow[]): void {
+    this.disposeOverlays();
+
+    const tintGeometry = new THREE.PlaneGeometry(SQUARE * 0.94, SQUARE * 0.94);
+    tintGeometry.rotateX(-Math.PI / 2);
+    this.overlayGeometries.push(tintGeometry);
+    for (const t of tints) {
+      const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(t.color),
+        transparent: true,
+        opacity: t.opacity,
+        depthWrite: false,
+      });
+      this.overlayMaterials.push(material);
+      const mesh = new THREE.Mesh(tintGeometry, material);
+      const { x, z } = squareCenter(t.square);
+      mesh.position.set(x, 0.012, z);
+      this.overlayGroup.add(mesh);
+    }
+
+    for (const a of arrows) this.addArrow(a);
+    this.render();
+  }
+
+  clearOverlays(): void {
+    this.disposeOverlays();
+    this.render();
+  }
+
+  private addArrow(a: Board3DArrow): void {
+    const from = squareCenter(a.from);
+    const to = squareCenter(a.to);
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.01) return;
+
+    const headLength = 0.34;
+    const startGap = 0.18; // leave the origin piece's own footprint clear
+    const shaftLength = Math.max(0.1, distance - headLength - startGap);
+    const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(a.color), depthTest: false });
+    const shaftGeometry = new THREE.CylinderGeometry(0.055, 0.055, shaftLength, 12);
+    const headGeometry = new THREE.ConeGeometry(0.16, headLength, 16);
+    this.overlayMaterials.push(material);
+    this.overlayGeometries.push(shaftGeometry, headGeometry);
+
+    // Built pointing along +Y, then rotated to point from -> to.
+    const shaft = new THREE.Mesh(shaftGeometry, material);
+    shaft.position.y = startGap + shaftLength / 2;
+    const head = new THREE.Mesh(headGeometry, material);
+    head.position.y = startGap + shaftLength + headLength / 2;
+    shaft.renderOrder = 10;
+    head.renderOrder = 10;
+
+    const arrow = new THREE.Group();
+    arrow.add(shaft, head);
+    arrow.position.set(from.x, 0.16, from.z);
+    arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx, 0, dz).normalize());
+    this.overlayGroup.add(arrow);
+  }
+
+  private disposeOverlays(): void {
+    this.overlayGroup.clear();
+    this.overlayGeometries.forEach((g) => g.dispose());
+    this.overlayMaterials.forEach((m) => m.dispose());
+    this.overlayGeometries = [];
+    this.overlayMaterials = [];
   }
 
   /** Moves the canvas into a different container (e.g. the small inline
@@ -495,6 +593,7 @@ export class Board3D {
     window.removeEventListener("pointermove", this.handlePointerMove);
     window.removeEventListener("pointerup", this.handlePointerUp);
     window.removeEventListener("pointercancel", this.handlePointerUp);
+    this.disposeOverlays();
     Object.values(this.pieceGeometries).forEach((g) => g.dispose());
     Object.values(this.pieceMaterials).forEach((m) => m.dispose());
     this.squareGeometry.dispose();
