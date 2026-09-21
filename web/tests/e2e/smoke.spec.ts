@@ -37,6 +37,37 @@ test.describe("landing page smoke", () => {
     expect(problems, problems.join("\n")).toEqual([]);
   });
 
+  // The app says a visitor's games stay in their browser, so nothing from
+  // the feedback vendors may load until the visitor asks for feedback.
+  test("Featurebase loads only after the Feedback button is clicked", async ({ page }) => {
+    const featurebaseRequests: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("featurebase")) featurebaseRequests.push(req.url());
+    });
+
+    await page.goto("/");
+    await expect(page.locator("#feedback-btn")).toBeVisible();
+    await page.waitForTimeout(1500);
+    expect(featurebaseRequests, featurebaseRequests.join("\n")).toEqual([]);
+    await expect(page.locator("#featurebase-sdk")).toHaveCount(0);
+
+    await page.locator("#feedback-btn").click();
+    await expect(page.locator("#featurebase-sdk")).toHaveCount(1);
+    await expect.poll(() => featurebaseRequests.length).toBeGreaterThan(0);
+  });
+
+  test("a blocked Featurebase script sends the click to the public feedback page", async ({
+    page,
+  }) => {
+    await page.route("**/do.featurebase.app/**", (route) => route.abort());
+    await page.goto("/");
+
+    const popup = page.waitForEvent("popup");
+    await page.locator("#feedback-btn").click();
+    const feedbackPage = await popup;
+    await expect.poll(() => feedbackPage.url()).toContain("mibottega.featurebase.app");
+  });
+
   test("shows the hero and both primary CTAs", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("section.hero")).toBeVisible();

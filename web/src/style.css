@@ -157,7 +157,8 @@ textarea:focus-visible,
 }
 
 /* Header "Feedback" button — stays `hidden` until feedback.ts confirms a
-   configured Featurebase widget is ready, so it never shows a dead control. */
+   Featurebase org is configured, so it never shows a dead control. The
+   widget itself loads on the first click. */
 .feedback-btn {
   align-self: center;
   background: transparent;
