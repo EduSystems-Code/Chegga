@@ -93,6 +93,7 @@ async function playLesson(page: Page, opts: { expectSite?: string } = {}) {
   await expect(title(page)).toHaveText("The position");
   await expect(page.locator("#tutorial-say")).toContainText("You are playing White");
   await expect(page.locator("#tutorial-board .play-candidate-tint")).toHaveCount(0); // the heatmap is not on yet
+  await expect(page.locator("#tutorial-legend")).toBeHidden(); // and neither is its legend
   await next(page).click();
 
   await expect(title(page)).toHaveText("The heatmap");
@@ -112,7 +113,7 @@ async function playLesson(page: Page, opts: { expectSite?: string } = {}) {
 
   // A legal move that is not the one asked for gets a nudge and is taken back.
   await clickSquares(page, "a2", "a3");
-  await expect(page.locator("#tutorial-say")).toContainText("not the one I am asking for");
+  await expect(page.locator("#tutorial-say")).toContainText("not the move to find here");
   await expect(page.locator(`#tutorial-board [data-square="a3"] img, #tutorial-board [data-square="a3"] .play-piece`)).toHaveCount(0);
 
   await clickSquares(page, from, to);
@@ -227,7 +228,7 @@ test.describe("first-run tutorial", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "No account? Try an example game instead" }).click();
     await expect(title(page)).toHaveText("A move worth a second look", { timeout: 60_000 });
-    const lastLine = "Let's look at the position first. I won't show the better move yet.";
+    const lastLine = "Look at the position first. The better move comes later.";
     await expect(page.locator("#tutorial-say")).not.toContainText(lastLine); // still being typed
     await next(page).click(); // the first click shows the rest of the text
     await expect(page.locator("#tutorial-say")).toContainText(lastLine);

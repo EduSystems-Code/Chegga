@@ -4007,13 +4007,20 @@ async function onTutorialDone(result: TutorialResult) {
   writeHashState({ u: result.username, s: result.site });
 
   if (result.sync) {
+    const added = result.sync.gamesAdded;
+    const siteName = SITE_NAMES[result.site];
     setStatus(
       syncLog,
-      `Synced your ${result.sync.gamesAdded} most recent ${SITE_NAMES[result.site]} games. Analyzing a first batch…`,
+      added === 0
+        ? `Your ${siteName} games were already here. Analyzing a first batch…`
+        : added === 1
+          ? `Synced your most recent ${siteName} game. Analyzing it…`
+          : `Synced your ${added} most recent ${siteName} games. Analyzing a first batch…`,
       "ok",
     );
     if (result.site === "chesscom" && !result.sync.fullyCaughtUp) {
-      fullSyncPromptText.textContent = `That's your ${result.sync.gamesAdded} most recent games.`;
+      fullSyncPromptText.textContent =
+        added === 1 ? "That's your most recent game." : `That's your ${added} most recent games.`;
       fullSyncPrompt.style.display = "";
     }
     if (result.site === "lichess" && !result.sync.fullyCaughtUp) {

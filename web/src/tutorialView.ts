@@ -43,7 +43,7 @@ export function overlayHtml(): string {
       <section class="tutorial-guide" aria-live="off">
         <div class="tutorial-speaker">
           <span class="tutorial-avatar" aria-hidden="true">${BRAND_MARK}</span>
-          <span class="tutorial-speaker-name">Your Chegga guide</span>
+          <span class="tutorial-speaker-name">Chegga</span>
         </div>
         <div class="tutorial-bubble">
           <h2 class="tutorial-title" id="tutorial-title" tabindex="-1"></h2>
@@ -75,7 +75,7 @@ export function connectFormHtml(defaultSite: Site): string {
     </div>
     <label for="tutorial-username" class="sr-only">Your username</label>
     <input id="tutorial-username" class="tutorial-input" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Your username" maxlength="30" />
-    <p class="tutorial-form-note">Just your username. Chegga never asks for a password. It reads your public games, and nothing leaves your browser except that request.</p>
+    <p class="tutorial-form-note">Just your username — Chegga never asks for a password. It reads your public games from the site you pick. Your games stay in this browser and are never uploaded anywhere.</p>
     <p class="tutorial-error" id="tutorial-error" role="alert"></p>
     <button type="submit" class="tutorial-primary">Look at my latest game</button>
     <button type="button" class="tutorial-link" id="tutorial-example">No account? Try an example game instead</button>

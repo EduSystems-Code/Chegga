@@ -237,8 +237,8 @@ export function startTutorial(onDone: (result: TutorialResult) => void): void {
     const errorEl = controlsEl.querySelector<HTMLElement>("#tutorial-error")!;
     errorEl.textContent = errorText;
     void say("Welcome to Chegga", [
-      "I am your guide. Chegga finds the moves you missed in your own games, and shows you what to play instead.",
-      "Tell me where you play and give me your username. I will look at your latest games.",
+      "Chegga finds the moves you missed in your own games, and shows you what to play instead.",
+      "Choose where you play and type your username. Chegga will look at your latest games.",
     ]);
     // A phone's on-screen keyboard would cover the very text being read.
     if (!window.matchMedia("(pointer: coarse)").matches) input.focus({ preventScroll: true });
@@ -270,8 +270,8 @@ export function startTutorial(onDone: (result: TutorialResult) => void): void {
     const exampleBtn = controlsEl.querySelector<HTMLButtonElement>("#tutorial-example")!;
     const progress = (text: string) => (progressEl.textContent = text);
     void say("Looking at your games", [
-      `I am reading your newest games from ${SITE_NAMES[site]} and checking your moves with a chess engine.`,
-      "This takes a few seconds. Everything runs in your browser.",
+      `Chegga is reading your newest games from ${SITE_NAMES[site]} and checking your moves with a chess engine.`,
+      "This takes a few seconds. The engine runs in your browser.",
     ]);
     progress(`Reading your games from ${SITE_NAMES[site]}…`);
     stopScan = false;
@@ -303,7 +303,7 @@ export function startTutorial(onDone: (result: TutorialResult) => void): void {
       if (games.length === 0) {
         return {
           kind: "error",
-          message: `I could not find any ${SITE_NAMES[site]} games for "${username}" yet. Check the spelling, or try an example game.`,
+          message: `Chegga found no ${SITE_NAMES[site]} games for "${username}". Check the spelling, or try an example game.`,
         };
       }
 
@@ -344,7 +344,9 @@ export function startTutorial(onDone: (result: TutorialResult) => void): void {
       }
       return {
         kind: "none",
-        note: "I did not find a clear missed move in your latest games. That is a good sign.",
+        // No claim about the whole account: the scan reads the newest few
+        // games under a time budget, so "you play cleanly" would not be true.
+        note: "Chegga did not find a clear missed move in your newest games.",
       };
     })();
 
@@ -360,7 +362,7 @@ export function startTutorial(onDone: (result: TutorialResult) => void): void {
     setPhase("scan");
     setStep(1);
     setControls("");
-    void say("Getting the example ready", ["One moment. The engine is looking at the example position."]);
+    void say("Getting the example ready", ["One moment: the engine is looking at the example position."]);
     const lines = (await guard(analyzeCandidates(EXAMPLE_MOMENT.fenBefore))) ?? [];
     const confirmed = confirmMoment(EXAMPLE_MOMENT, lines) ?? EXAMPLE_MOMENT;
     return { moment: confirmed, deepLines: lines, site: account?.site, username: account?.username, sync, exampleNote: note };
