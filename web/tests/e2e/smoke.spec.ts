@@ -1,5 +1,18 @@
 import { test, expect } from "@playwright/test";
 
+// These specs are about the page itself, not the first-run tutorial (see
+// tutorial.spec.ts), so they start as a visitor who has already been through it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("chegga-web:tutorial", "done");
+    } catch {
+      // blocked storage: the tutorial does not show then either
+    }
+  });
+});
+
+
 // The pre-connect surface — everything a first-time visitor sees before
 // they type a username. This is what actually ships to a phone from a
 // shared link, so it is the highest-value thing to keep un-broken.

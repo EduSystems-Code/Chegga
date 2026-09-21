@@ -75,6 +75,12 @@ export class PlayBoard {
   private drag: DragState | null = null;
   private arrows: BoardArrow[] = [];
   private candidateTints = new Map<Square, SquareTint>();
+  // The heatmap "turning on": the next render fades the tints in one after
+  // another (in the order given), and the arrows in. One render only -- a
+  // later re-render (a tap on a square) must not replay it.
+  private tintOrder = new Map<Square, number>();
+  private animateTintsOnce = false;
+  private animateArrowsOnce = false;
   // Each board draws its own SVG arrowheads; the marker ids must not
   // collide between the several boards on one page.
   private static nextUid = 0;
@@ -247,16 +253,19 @@ export class PlayBoard {
 
   /** Draws several arrows at once, each in its own color (the review's
    * best-move / played-move / preview arrows). An empty list clears them. */
-  showArrows(arrows: BoardArrow[]): void {
+  showArrows(arrows: BoardArrow[], opts: { animate?: boolean } = {}): void {
     this.arrows = arrows;
+    this.animateArrowsOnce = !!opts.animate;
     this.render();
   }
 
   /** Washes squares with a color at a given strength -- the candidate-move
    * heatmap. Replaces any earlier set; an empty list clears it. Purely
    * presentational, like showArrow(). */
-  setCandidateTints(tints: SquareTint[]): void {
+  setCandidateTints(tints: SquareTint[], opts: { animate?: boolean } = {}): void {
     this.candidateTints = new Map(tints.map((t) => [t.square, t]));
+    this.tintOrder = new Map(tints.map((t, i) => [t.square, i]));
+    this.animateTintsOnce = !!opts.animate;
     this.render();
   }
 
@@ -587,7 +596,7 @@ export class PlayBoard {
         squaresHtml += `
           <div class="play-square" data-square="${square}" style="background:${bg}">
             ${tint ? `<span class="play-heatmap-tint" style="background:${tint}"></span>` : ""}
-            ${candidate ? `<span class="play-heatmap-tint play-candidate-tint" style="background:${candidate.color};opacity:${candidate.opacity}"></span>` : ""}
+            ${candidate ? `<span class="play-heatmap-tint play-candidate-tint${this.animateTintsOnce ? " play-candidate-tint-in" : ""}" style="background:${candidate.color};opacity:${candidate.opacity};--tint-opacity:${candidate.opacity}${this.animateTintsOnce ? `;animation-delay:${(this.tintOrder.get(square) ?? 0) * 110}ms` : ""}"></span>` : ""}
             ${pieceHtml}
             ${dot}
             ${quality ? `<span class="play-quality-ring${quality.hold ? " play-quality-hold" : ""}" style="--quality-color:${quality.color}"></span>` : ""}
@@ -612,6 +621,8 @@ export class PlayBoard {
     const arrowSvg = this.arrows.length ? this.renderArrows(displayFiles, displayRanks) : "";
 
     this.container.innerHTML = `<div class="play-board">${squaresHtml}</div>${arrowSvg}${promoOverlay}`;
+    this.animateTintsOnce = false;
+    this.animateArrowsOnce = false;
   }
 
   private renderArrows(displayFiles: string[], displayRanks: number[]): string {
@@ -643,7 +654,7 @@ export class PlayBoard {
               marker-end="url(#${markerId})" vector-effect="non-scaling-stroke"/>`);
     });
     return `
-      <svg class="play-arrow-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <svg class="play-arrow-layer${this.animateArrowsOnce ? " play-arrow-layer-in" : ""}" viewBox="0 0 100 100" preserveAspectRatio="none">
         <defs>${defs.join("")}</defs>${lines.join("")}
       </svg>`;
   }

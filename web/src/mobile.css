@@ -403,3 +403,51 @@ body {
     min-height: 44px;
   }
 }
+
+/* ---- First-run tutorial (small screens): board on top, guide below ---- */
+@media (max-width: 820px) {
+  .tutorial {
+    --tut-sq: min(10.6vw, 46px);
+  }
+  .tutorial-panel {
+    padding: 12px 12px 28px;
+    gap: 14px;
+  }
+  .tutorial-body {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .tutorial-dots {
+    display: none; /* the title already says where you are; the room goes to Skip */
+  }
+  .tutorial-bubble {
+    min-height: 0;
+    padding: 14px 16px;
+  }
+  .tutorial-primary,
+  .tutorial-input {
+    width: 100%;
+    max-width: none;
+    min-height: 48px;
+  }
+  .tutorial-controls,
+  .tutorial-form {
+    align-items: stretch;
+  }
+  .tutorial-skip {
+    min-height: 40px;
+  }
+  /* Welcome and "reading your games" have nothing to show on the board, and
+     the form must be on screen without scrolling. */
+  .tutorial:not([data-phase="lesson"]) .tutorial-stage {
+    display: none;
+  }
+  /* The guide's text can be long: keep the button that moves on within reach. */
+  .tutorial-controls:has(> #tutorial-next) {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding: 12px 0 max(12px, env(safe-area-inset-bottom));
+    background: linear-gradient(to bottom, transparent, var(--bg) 35%);
+  }
+}

@@ -1,5 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
 
+// These specs are about the page itself, not the first-run tutorial (see
+// tutorial.spec.ts), so they start as a visitor who has already been through it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("chegga-web:tutorial", "done");
+    } catch {
+      // blocked storage: the tutorial does not show then either
+    }
+  });
+});
+
+
 // Picker -> review -> reasons -> best-move heatmap -> practice -> saved
 // positions, against a real (seeded) synced game and the real WASM engine.
 // Runs against the local build (see playwright.config.ts). The Chess.com

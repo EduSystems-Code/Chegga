@@ -125,6 +125,14 @@ function bestMoveClause(facts: MoveFacts | null, phase: ExplainInput["gamePhase"
   return null;
 }
 
+/** What the engine's move does, from the position it is played in, as a
+ * short clause ("captures the knight on d5"), or null when it does nothing
+ * a sentence can name. Exported for the tutorial, which explains why the
+ * best move is best before the player has played anything. */
+export function bestMoveClauseFor(fen: string, uci: string, phase: ExplainInput["gamePhase"]): string | null {
+  return bestMoveClause(moveFacts(fen, uci), phase);
+}
+
 /** Mover-relative, in pawns: +1.3 is good for the mover, -0.4 is bad. */
 function moverEval(cp: number | undefined, mate: number | undefined, side: "white" | "black") {
   const sign = side === "white" ? 1 : -1;

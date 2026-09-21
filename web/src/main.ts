@@ -166,6 +166,9 @@ import { analyzeCandidates, cachedCandidateLines } from "./candidateAnalysis";
 import { buildPickerCards, pickerCounts, type PickerFilter } from "./gamePicker";
 import { renderGamePicker, renderSavedPositions } from "./gamePickerView";
 import { puzzleFromStep } from "./savedPuzzles";
+import { shouldShowTutorial } from "./firstRun";
+import { startTutorial, type TutorialResult } from "./tutorial";
+import { getLastSite, setLastSite, syncLichess, SITE_NAMES, type Site } from "./siteSync";
 import {
   playMoveSound,
   playCaptureSound,
@@ -181,6 +184,21 @@ import {
 import { saveBotGame, loadSavedBotGame, clearSavedBotGame } from "./botGameStorage";
 import { createProgressBar } from "./progressBar";
 import { isColorblindPalette, setColorblindPalette } from "./classificationColors";
+
+// Decided here, before anything below writes to localStorage: the board
+// theme and a few other settings are written on every load, and would make a
+// brand-new visitor look like a returning one. See firstRun.ts.
+const showTutorialThisLoad = shouldShowTutorial({
+  storage: (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+  search: location.search,
+  hashUsername: new URLSearchParams(location.hash.replace(/^#/, "")).get("u") || undefined,
+});
 
 // Cap arrows per origin square so the board stays legible as the synced
 // history grows -- see openingExplorer.ts's topMovesPerOrigin.
@@ -224,7 +242,7 @@ app.innerHTML = `
       <p>
         Play a real Stockfish opponent right in your browser — every move gets graded and stands out
         instantly, from a quiet good move to a real "best move" moment. No account needed. Want the deeper
-        view? Connect your Chess.com username and every game you've played gets the same treatment.
+        view? Connect your Chess.com or Lichess username and every game you've played gets the same treatment.
       </p>
       <div class="hero-cta">
         <button type="button" id="hero-play-btn">Play a bot</button>
@@ -360,13 +378,18 @@ app.innerHTML = `
     </section>
 
     <section class="card" id="sync-section" data-tier="primary">
-      <h2>Get started — connect your Chess.com username</h2>
+      <h2>Get started — connect your Chess.com or Lichess username</h2>
       <p class="tagline" style="margin-bottom:16px">
         The first sync pulls just your recent games, so you see results in seconds; one click grabs the rest later.
         No account? Jump to <strong>Play vs. bot</strong> below instead.
       </p>
       <form id="sync-form" class="row">
-        <label for="username" class="sr-only">Chess.com username</label>
+        <label for="sync-site" class="sr-only">Where you play</label>
+        <select id="sync-site">
+          <option value="chesscom">Chess.com</option>
+          <option value="lichess">Lichess</option>
+        </select>
+        <label for="username" class="sr-only">Chess.com or Lichess username</label>
         <input id="username" type="text" placeholder="e.g. MichaelBottega" autocomplete="off" required />
         <button type="submit" id="sync-btn">Sync games</button>
       </form>
@@ -771,6 +794,7 @@ app.innerHTML = `
         <a href="https://www.gnu.org/licenses/gpl-2.0.txt" target="_blank" rel="noopener">GPLv2+</a>, via
         <a href="https://github.com/lichess-org/lila" target="_blank" rel="noopener">lichess-org/lila</a>.
         Not affiliated with Chess.com or Lichess.
+        <a href="?tutorial=1" id="replay-tutorial">Replay the tutorial</a>
       </p>
     </footer>
   </div>
@@ -809,15 +833,16 @@ wireTaxonomyBrowser(document.querySelector<HTMLElement>("#pk-taxonomy-root")!, (
 // just one that already has it in localStorage); `#open=<card-id>`
 // expands and scrolls to a specific card. The hash is kept current as the
 // viewer opens cards and syncs, via replaceState (no history spam).
-function readHashState(): { u?: string; open?: string } {
+function readHashState(): { u?: string; open?: string; s?: string } {
   const h = new URLSearchParams(location.hash.replace(/^#/, ""));
-  return { u: h.get("u") || undefined, open: h.get("open") || undefined };
+  return { u: h.get("u") || undefined, open: h.get("open") || undefined, s: h.get("s") || undefined };
 }
-function writeHashState(patch: { u?: string; open?: string }) {
+function writeHashState(patch: { u?: string; open?: string; s?: string }) {
   const cur = readHashState();
   const next = { ...cur, ...patch };
   const h = new URLSearchParams();
   if (next.u) h.set("u", next.u);
+  if (next.s && next.s !== "chesscom") h.set("s", next.s); // Chess.com is the default; only Lichess needs saying
   if (next.open) h.set("open", next.open);
   const s = h.toString();
   history.replaceState(null, "", s ? `#${s}` : location.pathname + location.search);
@@ -2056,7 +2081,58 @@ const fullSyncBtn = document.querySelector<HTMLButtonElement>("#full-sync-btn")!
  * Every other call (a returning visitor, or explicitly clicking "Get my
  * full history") gets the real full sync, unchanged from before this
  * existed. */
-async function runSync(username: string) {
+// Which site the current username belongs to. A shared link says so
+// (`#s=lichess`); otherwise it is whatever the visitor used last.
+let currentSite: Site = initialHash.s === "lichess" ? "lichess" : getLastSite();
+const siteSelect = document.querySelector<HTMLSelectElement>("#sync-site")!;
+siteSelect.value = currentSite;
+
+/** Lichess has no monthly archives: the first sync takes the newest games,
+ * and later syncs ask only for what is newer than the newest one stored. */
+async function runLichessSync(username: string) {
+  syncBtn.disabled = true;
+  fullSyncPrompt.style.display = "none";
+  try {
+    const db = await openDb();
+    try {
+      const isFirstEverSync = (await countSyncStatesForUsername(db, username)) === 0;
+      setStatus(syncLog, isFirstEverSync ? `syncing ${username} from Lichess for the first time…` : `Checking Lichess for new games…`);
+      currentUsername = username;
+      try {
+        localStorage.setItem(LAST_USERNAME_KEY, username);
+      } catch {
+        // best-effort only
+      }
+      setLastSite("lichess");
+      writeHashState({ u: username, s: "lichess" });
+      const result = await syncLichess(db, username, {
+        max: isFirstEverSync ? QUICK_SYNC_GAME_TARGET : 200,
+        incremental: !isFirstEverSync,
+      });
+      setStatus(
+        syncLog,
+        `Synced ${result.gamesAdded} ${isFirstEverSync ? "of your most recent" : "new"} Lichess games for ${username}.${isFirstEverSync ? " Analyzing a first batch…" : " Ready to analyze."}`,
+        "ok",
+      );
+      db.close();
+      await refreshProfile();
+      if (isFirstEverSync) await runAnalyzeRecent(QUICK_SYNC_ANALYZE_COUNT);
+    } catch (err) {
+      db.close();
+      throw err;
+    }
+  } catch (err: any) {
+    setStatus(syncLog, `${err.message ?? err}`, "error");
+  } finally {
+    syncBtn.disabled = false;
+  }
+}
+
+async function runSync(username: string, site: Site = currentSite) {
+  currentSite = site;
+  if (site === "lichess") return runLichessSync(username);
+  setLastSite("chesscom");
+  writeHashState({ s: "chesscom" });
   syncBtn.disabled = true;
   fullSyncPrompt.style.display = "none";
 
@@ -2132,7 +2208,7 @@ syncForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const username = usernameInput.value.trim();
   if (!username) return;
-  await runSync(username);
+  await runSync(username, siteSelect.value === "lichess" ? "lichess" : "chesscom");
 });
 
 // "Get my full history" -- the explicit second pass. By the time this is
@@ -3813,4 +3889,58 @@ async function computeStrengthForGame(chessComUuid: string) {
     await refreshProfile();
   },
 };
+// --- First-run tutorial ---
+//
+// The tutorial reads the visitor's games itself (siteSync.ts), so by the time
+// it ends they are already in IndexedDB. What is left is what the Get started
+// form would have done after a first sync: remember the username, show the
+// games, and start analyzing a first batch in the background.
+
+async function onTutorialDone(result: TutorialResult) {
+  window.scrollTo({ top: 0 });
+  if (!result.username || !result.site) return;
+
+  currentUsername = result.username;
+  currentSite = result.site;
+  usernameInput.value = result.username;
+  siteSelect.value = result.site;
+  try {
+    localStorage.setItem(LAST_USERNAME_KEY, result.username);
+  } catch {
+    // best-effort only
+  }
+  setLastSite(result.site);
+  writeHashState({ u: result.username, s: result.site });
+
+  if (result.sync) {
+    setStatus(
+      syncLog,
+      `Synced your ${result.sync.gamesAdded} most recent ${SITE_NAMES[result.site]} games. Analyzing a first batch…`,
+      "ok",
+    );
+    if (result.site === "chesscom" && !result.sync.fullyCaughtUp) {
+      fullSyncPromptText.textContent = `That's your ${result.sync.gamesAdded} most recent games.`;
+      fullSyncPrompt.style.display = "";
+    }
+  }
+  try {
+    await refreshProfile();
+  } catch (err: any) {
+    setStatus(syncLog, `Couldn't load your games: ${err.message ?? err}`, "error");
+    return;
+  }
+  showToast(
+    result.savedPosition
+      ? "Your games are ready under “Review a game”. The position from the tutorial is saved there too."
+      : "Your games are ready under “Review a game”.",
+  );
+  await runAnalyzeRecent(QUICK_SYNC_ANALYZE_COUNT);
+}
+
+if (showTutorialThisLoad) startTutorial((result) => void onTutorialDone(result));
+document.querySelector("#replay-tutorial")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  startTutorial((result) => void onTutorialDone(result));
+});
+
 // Deployed via Vercel, connected to GitHub for auto-deploy (2026-08-26).
