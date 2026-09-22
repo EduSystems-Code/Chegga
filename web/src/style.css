@@ -213,6 +213,51 @@ textarea:focus-visible,
   background: var(--accent-wash);
 }
 
+/* ---- "See a demo": the sample-data offer on the sync card, and the
+   banner that keeps saying so for as long as that data is loaded. The
+   button stays ghost-styled so it never competes with "Sync games",
+   which is still the action we actually want. ---- */
+.demo-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.demo-cta .tagline {
+  margin: 0;
+}
+.demo-cta .btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+.demo-cta .btn-ghost:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.demo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--accent-wash);
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.demo-banner strong {
+  color: var(--accent-strong);
+}
+
 /* ---- Sticky jump nav: skip the scroll, land on a section. Hidden on
    very small screens where it would wrap badly (skip link still covers
    keyboard users). ---- */

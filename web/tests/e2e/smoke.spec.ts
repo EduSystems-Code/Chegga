@@ -17,9 +17,8 @@ test.beforeEach(async ({ page }) => {
 // they type a username. This is what actually ships to a phone from a
 // shared link, so it is the highest-value thing to keep un-broken.
 //
-// Walking the growth cards (forcing each visible against a real analysed
-// account, per critique #2) needs the bundled demo dataset from critique
-// #1, which is still on hold — see the fixme at the bottom.
+// Walking the growth cards against a real analysed account is the
+// "bundled demo dataset" describe block at the bottom of this file.
 
 test.describe("landing page smoke", () => {
   test("loads with no thrown errors or console errors", async ({ page }) => {
@@ -142,9 +141,88 @@ test.describe("landing page smoke", () => {
   });
 });
 
-// TODO(after critique #1 lands the bundled demo dataset): load the demo
-// account, then for each growth card (#road-to-2000, #weekly-plan,
-// #blunder-rate, #consistency, #convert-the-win) assert it renders,
-// contains its expected numbers, and throws nothing; tab the whole page
-// and snapshot the focus order.
-test.fixme("growth cards render against the demo dataset", () => {});
+// The growth cards had never been click-tested against real data — there was
+// no way to get data into the page without a real account and an engine run.
+// The bundled demo dataset is that way, so this is the run they never got.
+//
+// The five cards sit behind the "Coming soon" gate (`data-coming-soon`), which
+// CSS-hides them regardless of their own state. So these assert what the data
+// actually drives: the card un-hid itself (each one sets display:none when its
+// compute function returns nothing) and its output holds real content.
+const GROWTH_CARDS = [
+  { section: "#road-section", output: "#road-output", expect: /Model estimate now/i },
+  { section: "#weekly-plan-section", output: "#weekly-plan-output", expect: /Mon|Tue|Wed/i },
+  { section: "#blunder-rate-section", output: "#blunder-rate-output", expect: /per 100/i },
+  { section: "#consistency-section", output: "#consistency-output", expect: /after a loss/i },
+  { section: "#convert-section", output: "#convert-output", expect: /\+\d/ },
+];
+
+test.describe("bundled demo dataset", () => {
+  test("every growth card renders real content, with no errors", async ({ page }) => {
+    const problems: string[] = [];
+    page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+    page.on("console", (msg) => {
+      if (msg.type() === "error") problems.push(`console.error: ${msg.text()}`);
+    });
+
+    await page.goto("/");
+    await page.locator("#demo-load-btn").click();
+
+    await expect(page.locator("#demo-banner")).toBeVisible();
+    await expect(page.locator("#sync-log")).toContainText(/sample games/i);
+
+    for (const card of GROWTH_CARDS) {
+      const section = page.locator(card.section);
+      await expect(section).toBeAttached();
+      // Hidden by the Coming-soon gate, but its own data-driven toggle must
+      // have opened it — "none" here means the card found nothing to show.
+      await expect
+        .poll(async () => section.evaluate((el: HTMLElement) => el.style.display), {
+          message: `${card.section} stayed hidden — its compute function returned nothing`,
+        })
+        .not.toBe("none");
+
+      const output = page.locator(card.output);
+      await expect(output).toContainText(card.expect);
+      const text = ((await output.textContent()) ?? "").trim();
+      expect(text.length, `${card.output} rendered almost nothing`).toBeGreaterThan(80);
+      expect(text).not.toMatch(/not enough data|no data yet/i);
+    }
+
+    // The cards that are on the front page should have filled in too.
+    await expect(page.locator("#profile-output")).toContainText(/\d/);
+    await expect(page.locator("#picker-output")).toContainText(/\d/);
+
+    expect(problems, problems.join("\n")).toEqual([]);
+  });
+
+  test("clearing the demo returns the page to its empty state", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("#demo-load-btn").click();
+    await expect(page.locator("#demo-banner")).toBeVisible();
+
+    await page.locator("#demo-clear-btn").click();
+
+    // The clear reloads the page; the banner must not come back.
+    await expect(page.locator("#demo-banner")).toBeHidden();
+    await expect(page.locator("#picker-section .empty-state")).toBeVisible();
+    await expect(page.locator("#road-section")).toHaveJSProperty("style.display", "none");
+  });
+
+  test("the demo survives a reload without trying to sync a fake account", async ({ page }) => {
+    const siteRequests: string[] = [];
+    await page.goto("/");
+    await page.locator("#demo-load-btn").click();
+    await expect(page.locator("#demo-banner")).toBeVisible();
+
+    page.on("request", (req) => {
+      const url = req.url();
+      if (url.includes("chess.com") || url.includes("lichess.org")) siteRequests.push(url);
+    });
+
+    await page.reload();
+    await expect(page.locator("#demo-banner")).toBeVisible();
+    await expect(page.locator("#profile-output")).toContainText(/\d/);
+    expect(siteRequests, siteRequests.join("\n")).toEqual([]);
+  });
+});

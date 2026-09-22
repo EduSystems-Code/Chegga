@@ -21,6 +21,12 @@ export function renderThrownGames(games: ThrownGame[]): string {
       const slip = g.slipSan
         ? `move ${g.slipMoveNumber}, <strong>${esc(g.slipSan)}</strong> (−${g.slipCpLoss}cp)`
         : "—";
+      // A game can have no source URL (the bundled demo dataset, an import
+      // from another site). `href=""` is not an inert link — it reloads the
+      // current page, which reads as the app losing your place.
+      const link = g.url
+        ? `<a href="${esc(g.url)}" target="_blank" rel="noopener">open ↗</a>`
+        : "";
       return `
         <tr>
           <td>${when(g.endTime)}</td>
@@ -29,7 +35,7 @@ export function renderThrownGames(games: ThrownGame[]): string {
           <td class="ctw-peak">+${g.peakEvalPawns}</td>
           <td class="ctw-result ctw-${g.result}">${g.result}</td>
           <td>${slip}</td>
-          <td><a href="${esc(g.url)}" target="_blank" rel="noopener">open ↗</a></td>
+          <td>${link}</td>
         </tr>`;
     })
     .join("");

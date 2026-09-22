@@ -45,9 +45,21 @@ npm run test:smoke                                   # builds this branch, serve
 SMOKE_URL=https://chegga-web.vercel.app npm run test:smoke   # tests the live deploy
 ```
 
-The growth-card walk (critique #2 — force each card visible against a
-real analysed account) is a `test.fixme` until the bundled demo dataset
-(critique #1) exists.
+The growth-card walk (critique #2 — check each card against a real
+analysed account) runs in `smoke.spec.ts`, driven by the bundled demo
+dataset (critique #1). `demoData.test.ts` covers the same five cards at
+the unit level, running their real compute + render functions over the
+shipped fixture.
+
+The fixture itself is generated, not hand-edited:
+
+```
+node scripts/generate-demo-data.mjs     # rewrites public/demo-data.json
+```
+
+It fails rather than writing a file if the dataset stops satisfying any
+growth card's data gate, so a regenerate can't quietly ship a demo with
+empty cards.
 
 ## Not wired to a gate yet
 

@@ -38,6 +38,7 @@ import {
 } from "./db";
 import type { GameRecord, MoveAnalysisRecord, ExportedData, SavedPuzzleRecord } from "./db";
 import { Engine } from "./engine";
+import { DEMO_USERNAME, clearDemoData, isDemoActive, loadDemoData } from "./demoData";
 import { ChessComClient } from "./chessComClient";
 import { syncGames, quickSyncRecentGames } from "./syncService";
 import { analyzeGame, DEFAULT_ANALYSIS_OPTIONS, classify, cpEquivalent, DISPLAY_CLAMP_CP } from "./engineAnalysis";
@@ -238,6 +239,11 @@ app.innerHTML = `
       <button type="button" id="feedback-btn" class="feedback-btn" hidden>Feedback</button>
     </header>
 
+    <p id="demo-banner" class="demo-banner" role="status" style="display:none">
+      <span>You're viewing <strong>sample data</strong> — a made-up player, not a real account. Connect your own to see your games.</span>
+      <button type="button" id="demo-clear-btn">Clear sample data</button>
+    </p>
+
     <section class="hero" aria-labelledby="hero-title">
       <h2 id="hero-title">See how good each move was, the moment you make it.</h2>
       <p>
@@ -394,6 +400,11 @@ app.innerHTML = `
         <input id="username" type="text" placeholder="e.g. MichaelBottega" autocomplete="off" required />
         <button type="submit" id="sync-btn">Sync games</button>
       </form>
+      <p class="demo-cta">
+        Not ready to connect an account?
+        <button type="button" id="demo-load-btn" class="btn-ghost">See a demo</button>
+        <span class="tagline">Loads a made-up player's analyzed games so you can look around first.</span>
+      </p>
       <p id="sync-log" class="status-line"></p>
       <div id="sync-progress"></div>
       <p id="full-sync-prompt" class="status-line status-ok" style="display:none">
@@ -2332,6 +2343,66 @@ lichessHistoryCancelBtn.addEventListener("click", () => {
   lichessHistoryAbort?.abort();
 });
 
+// --- "See a demo": the bundled sample dataset (see demoData.ts) ---
+//
+// Declared above the auto-load block below, which reads these on a reload
+// that restores demo data — a `const` used before its declaration is a
+// temporal-dead-zone error, and inside that async IIFE it would surface as
+// nothing rendering at all rather than as a visible crash.
+
+const demoLoadBtn = document.querySelector<HTMLButtonElement>("#demo-load-btn")!;
+const demoBanner = document.querySelector<HTMLParagraphElement>("#demo-banner")!;
+const demoClearBtn = document.querySelector<HTMLButtonElement>("#demo-clear-btn")!;
+
+function showDemoBanner(visible: boolean) {
+  demoBanner.style.display = visible ? "" : "none";
+}
+
+demoLoadBtn.addEventListener("click", async () => {
+  demoLoadBtn.disabled = true;
+  setStatus(syncLog, "Loading the sample games…");
+  let db: IDBDatabase | null = null;
+  try {
+    db = await openDb();
+    const loaded = await loadDemoData(db);
+    // Deliberately not remembered as the last username and not written to the
+    // hash: a reload must not try to sync a player who does not exist.
+    currentUsername = DEMO_USERNAME;
+    showDemoBanner(true);
+    await refreshProfile();
+    setStatus(
+      syncLog,
+      `Loaded ${loaded.games} sample games and ${loaded.moveAnalysis} analysed moves. None of it is real — connect your own account when you're ready.`,
+      "ok",
+    );
+  } catch (err: any) {
+    setStatus(syncLog, `Couldn't load the sample data: ${err.message ?? err}`, "error");
+  } finally {
+    db?.close();
+    demoLoadBtn.disabled = false;
+  }
+});
+
+demoClearBtn.addEventListener("click", async () => {
+  demoClearBtn.disabled = true;
+  let db: IDBDatabase | null = null;
+  try {
+    db = await openDb();
+    await clearDemoData(db);
+    db.close();
+    db = null;
+    // Every card's visibility was toggled on by the demo's profile pass;
+    // reloading is the honest way back to a true first-visit empty state
+    // (and restores a real account, if one was already synced).
+    location.reload();
+  } catch (err: any) {
+    setStatus(syncLog, `Couldn't clear the sample data: ${err.message ?? err}`, "error");
+    demoClearBtn.disabled = false;
+  } finally {
+    db?.close();
+  }
+});
+
 // Auto-fill + auto-sync on load if a username was remembered -- this is
 // the "skip the login screen" shortcut: no click needed, and any games
 // already analyzed in a previous session show up immediately from
@@ -2343,6 +2414,21 @@ lichessHistoryCancelBtn.addEventListener("click", () => {
       saved = localStorage.getItem(LAST_USERNAME_KEY);
     } catch {
       // ignore -- storage may be blocked
+    }
+  }
+  // Demo data survives a reload. The banner shows whenever any is still
+  // stored, even alongside a real account, because clearing it is the only
+  // way to get rid of it.
+  if (isDemoActive()) {
+    showDemoBanner(true);
+    if (!saved) {
+      currentUsername = DEMO_USERNAME;
+      try {
+        await refreshProfile();
+      } catch (err: any) {
+        setStatus(syncLog, `Couldn't load the sample data: ${err.message ?? err}`, "error");
+      }
+      return; // no sync: this player does not exist on either site
     }
   }
   if (saved) {
