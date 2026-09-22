@@ -2299,9 +2299,18 @@ lichessHistoryBtn.addEventListener("click", async () => {
   let db: IDBDatabase | null = null;
   try {
     db = await openDb();
+    // WebKit repaints this line synchronously: one write per game costs ~115 ms
+    // there against ~0.1 ms in Chromium. Ten a second still reads as a live
+    // counter, and the message below is written either way.
+    let lastProgressPaint = 0;
     const result = await syncLichessFullHistory(idbHistoryStore(db), username, {
       signal: abort.signal,
-      onProgress: (text) => setStatus(syncLog, text),
+      onProgress: (text) => {
+        const now = performance.now();
+        if (now - lastProgressPaint < 100) return;
+        lastProgressPaint = now;
+        setStatus(syncLog, text);
+      },
     });
     if (result.cancelled) {
       setStatus(syncLog, `Stopped: ${result.gamesAdded} new games synced so far. What's already synced is saved — click "Get my full history" again to resume.`);
