@@ -51,11 +51,32 @@ describe("bundled demo dataset", () => {
 
   it("is entirely one fabricated visitor's data", () => {
     expect(new Set(games.map((g) => g.username))).toEqual(new Set(["chegga-demo"]));
-    expect(games.every((g) => g.analyzed)).toBe(true);
+  });
+
+  it("mixes analysed and not-yet-analysed games, like a real account", () => {
+    expect(analyzedGames.length).toBeGreaterThan(0);
+    expect(games.length).toBeGreaterThan(analyzedGames.length);
+    // An unanalysed game carrying analysis records would be a contradiction
+    // the picker and the profile disagree about.
+    const analyzedIds = new Set(analyzedGames.map((g) => g.chessComUuid));
+    for (const m of data.moveAnalysis) expect(analyzedIds.has(m.gameId)).toBe(true);
   });
 
   it("every analysis record belongs to a game in the file", () => {
     for (const m of data.moveAnalysis) expect(byId.has(m.gameId)).toBe(true);
+  });
+
+  // WebKit spends ~16ms per IndexedDB put where Chromium spends ~0.06ms, and
+  // batching does not help (measured: same cost for one transaction, one per
+  // store, or chunked). So the record count *is* the import time on the
+  // phones this demo is most often opened on. Storing only the player's own
+  // moves halves it at no visible cost: buildReview() reads every step from
+  // the PGN and only enriches it where a record exists.
+  it("stores only the player's own moves, and stays inside its import budget", () => {
+    for (const m of data.moveAnalysis) {
+      expect(m.sideToMove).toBe(byId.get(m.gameId)!.userColor);
+    }
+    expect(data.moveAnalysis.length).toBeLessThanOrEqual(260);
   });
 });
 

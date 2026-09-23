@@ -87,7 +87,6 @@ function opponentBestCapture(chess) {
 
 function scoreMove(chess, m, ply, rng) {
   let s = rng() * 1.2;
-  if (m.captured) s += 10 * VALUE[m.captured] - VALUE[m.piece];
   if (m.promotion) s += 80;
   if (m.flags.includes("k") || m.flags.includes("q")) s += ply < 24 ? 7 : 2;
   if (ply < 20 && (m.piece === "n" || m.piece === "b") && /[18]/.test(m.from)) s += 4;
@@ -102,7 +101,15 @@ function scoreMove(chess, m, ply, rng) {
   if (chess.isCheckmate()) s += 1000;
   else {
     if (chess.inCheck()) s += 3;
-    s -= 8 * opponentBestCapture(chess);
+    // Score the whole exchange, not the capture alone. Penalising the
+    // recapture on its own made every even trade look like a blunder, so the
+    // walk never simplified and no game ever reached an endgame.
+    s += 9 * ((m.captured ? VALUE[m.captured] : 0) - opponentBestCapture(chess));
+    // Past the opening, trading is how positions actually resolve. This is
+    // deliberately a strong pull: an even trade nets zero above, so without
+    // it the walk drifts sideways forever and no game ever simplifies far
+    // enough to count as an endgame (piece count <= 6, per engineAnalysis).
+    if (ply > 28 && m.captured) s += 8;
   }
   chess.undo();
   return s;
@@ -395,21 +402,28 @@ function toPgn(spec, chess) {
 // games that pieces actually come off and the endgame bucket fills. Without
 // those, every move lands in opening/middlegame and the strength model reads
 // a flat 0 for endgame accuracy — which is not "good endgames", it is no data.
+//
+// `analyzed: false` games are synced but not yet analyzed. They are not
+// padding: that is the real state of most of an account (analysis costs real
+// engine time), they carry the results the tilt card needs without costing a
+// single analysis record, and they give the picker its "not analyzed yet"
+// state to show. The split is what keeps the fixture small enough to import
+// quickly on WebKit — see the record-count gate in checkGates().
 const SCRIPT = [
-  { month: "2026-06", day: 3,  hour: 19, result: "win",  book: 0, color: "white", tc: "600",    plies: 74, thrown: false },
-  { month: "2026-06", day: 3,  hour: 20, result: "loss", book: 1, color: "black", tc: "600",    plies: 58, thrown: false },
-  { month: "2026-06", day: 11, hour: 21, result: "win",  book: 4, color: "white", tc: "300",    plies: 96, thrown: false },
-  { month: "2026-06", day: 11, hour: 22, result: "draw", book: 2, color: "black", tc: "300",    plies: 82, thrown: false },
-  { month: "2026-06", day: 19, hour: 20, result: "loss", book: 3, color: "white", tc: "900+10", plies: 70, thrown: true  },
-  { month: "2026-07", day: 2,  hour: 19, result: "loss", book: 5, color: "black", tc: "600",    plies: 52, thrown: false },
-  { month: "2026-07", day: 2,  hour: 20, result: "loss", book: 6, color: "white", tc: "600",    plies: 44, thrown: false },
-  { month: "2026-07", day: 2,  hour: 21, result: "loss", book: 7, color: "black", tc: "600",    plies: 88, thrown: false },
-  { month: "2026-07", day: 14, hour: 20, result: "loss", book: 8, color: "white", tc: "180",    plies: 46, thrown: false },
-  { month: "2026-07", day: 21, hour: 19, result: "win",  book: 9, color: "black", tc: "600",    plies: 78, thrown: false },
-  { month: "2026-07", day: 21, hour: 20, result: "win",  book: 0, color: "white", tc: "600",    plies: 62, thrown: false },
-  { month: "2026-08", day: 5,  hour: 21, result: "loss", book: 2, color: "white", tc: "900+10", plies: 90, thrown: true  },
-  { month: "2026-08", day: 12, hour: 20, result: "draw", book: 3, color: "black", tc: "600",    plies: 86, thrown: false },
-  { month: "2026-08", day: 23, hour: 19, result: "win",  book: 5, color: "white", tc: "600",    plies: 68, thrown: false },
+  { month: "2026-06", day: 3,  hour: 19, result: "win",  book: 0, color: "white", tc: "600",    plies: 54, thrown: false, analyzed: true  },
+  { month: "2026-06", day: 3,  hour: 20, result: "loss", book: 1, color: "black", tc: "600",    plies: 58, thrown: false, analyzed: false },
+  { month: "2026-06", day: 11, hour: 21, result: "win",  book: 4, color: "white", tc: "300",    plies: 92, thrown: false, analyzed: true  },
+  { month: "2026-06", day: 11, hour: 22, result: "draw", book: 2, color: "black", tc: "300",    plies: 82, thrown: false, analyzed: false },
+  { month: "2026-06", day: 19, hour: 20, result: "loss", book: 3, color: "white", tc: "900+10", plies: 70, thrown: true,  analyzed: true  },
+  { month: "2026-07", day: 2,  hour: 19, result: "loss", book: 5, color: "black", tc: "600",    plies: 52, thrown: false, analyzed: false },
+  { month: "2026-07", day: 2,  hour: 20, result: "loss", book: 6, color: "white", tc: "600",    plies: 44, thrown: false, analyzed: false },
+  { month: "2026-07", day: 2,  hour: 21, result: "loss", book: 7, color: "black", tc: "600",    plies: 52, thrown: false, analyzed: true  },
+  { month: "2026-07", day: 14, hour: 20, result: "loss", book: 8, color: "white", tc: "180",    plies: 46, thrown: false, analyzed: false },
+  { month: "2026-07", day: 21, hour: 19, result: "win",  book: 9, color: "black", tc: "600",    plies: 50, thrown: false, analyzed: true  },
+  { month: "2026-07", day: 21, hour: 20, result: "win",  book: 0, color: "white", tc: "600",    plies: 62, thrown: false, analyzed: false },
+  { month: "2026-08", day: 5,  hour: 21, result: "loss", book: 2, color: "white", tc: "900+10", plies: 86, thrown: true,  analyzed: true  },
+  { month: "2026-08", day: 12, hour: 20, result: "draw", book: 3, color: "black", tc: "600",    plies: 84, thrown: false, analyzed: true  },
+  { month: "2026-08", day: 23, hour: 19, result: "win",  book: 5, color: "white", tc: "600",    plies: 48, thrown: false, analyzed: true  },
 ];
 
 function errorScriptFor(entry, targetPlies) {
@@ -523,9 +537,16 @@ function build() {
       blackResult: resultCode(entry.result, userColor === "black"),
       userColor,
       userResult: entry.result,
-      analyzed: true,
+      analyzed: entry.analyzed,
     });
-    moveAnalysis.push(...built.moves);
+    // Only the player's own moves are stored. buildReview() reads every step
+    // from the PGN and merely enriches it where an analysis record exists, so
+    // the opponent's moves still render — ungraded, which is exactly how the
+    // review already shows them. Keeping them would double the import cost
+    // for nothing visible.
+    if (entry.analyzed) {
+      moveAnalysis.push(...built.moves.filter((m) => m.sideToMove === userColor));
+    }
   });
 
   const months = [...new Set(SCRIPT.map((e) => e.month))];
@@ -567,10 +588,36 @@ function checkGates(data) {
   for (const g of data.games) {
     const replay = new Chess();
     replay.loadPgn(g.pgn);
-    const plies = data.moveAnalysis.filter((m) => m.gameId === g.chessComUuid).length;
-    if (replay.history().length !== plies) {
-      problems.push(`${g.chessComUuid}: PGN has ${replay.history().length} moves but ${plies} analysis records`);
+    const history = replay.history({ verbose: true });
+    const records = data.moveAnalysis.filter((m) => m.gameId === g.chessComUuid);
+    if (!g.analyzed) {
+      if (records.length > 0) problems.push(`${g.chessComUuid}: not analyzed but carries ${records.length} analysis records`);
+      continue;
     }
+    // Own moves only — every record must line up with the PGN's own move at
+    // that ply, or the review would grade the wrong move.
+    const expected = history.filter((m) => (m.color === "w" ? "white" : "black") === g.userColor).length;
+    if (records.length !== expected) {
+      problems.push(`${g.chessComUuid}: PGN has ${expected} moves by the player but ${records.length} analysis records`);
+    }
+    for (const r of records) {
+      if (history[r.ply - 1]?.san !== r.san) {
+        problems.push(`${g.chessComUuid}: record at ply ${r.ply} says "${r.san}" but the PGN plays "${history[r.ply - 1]?.san}"`);
+        break;
+      }
+    }
+  }
+
+  // WebKit spends ~16ms per IndexedDB put regardless of how the writes are
+  // batched (measured: identical for one transaction, one per store, or
+  // chunked). Chromium is ~0.06ms. The only lever is writing fewer records,
+  // so the fixture has a hard record budget — the demo is meant to be the
+  // fast path onto the app, and most of the phones it is shared to are
+  // WebKit.
+  const RECORD_BUDGET = 260;
+  if (data.moveAnalysis.length > RECORD_BUDGET) {
+    const seconds = ((data.moveAnalysis.length * 16) / 1000).toFixed(1);
+    problems.push(`${data.moveAnalysis.length} analysis records is over the ${RECORD_BUDGET} budget (~${seconds}s to import on WebKit)`);
   }
 
   const mislabelled = data.moveAnalysis.filter((m) => classifyCp(m.centipawnLoss) !== m.classification);
@@ -655,6 +702,21 @@ const { problems, own, thrown, plottable, longest, blunders, phases } = checkGat
 
 if (problems.length > 0) {
   console.error("Demo dataset failed its own gates:\n" + problems.map((p) => `  - ${p}`).join("\n"));
+  console.error("\nPer-game shape (to see which knob to turn):");
+  for (const g of data.games) {
+    const replay = new Chess();
+    replay.loadPgn(g.pgn);
+    let left = 0;
+    for (const row of replay.board()) for (const sq of row) if (sq && sq.type !== "p" && sq.type !== "k") left += 1;
+    const recs = data.moveAnalysis.filter((m) => m.gameId === g.chessComUuid);
+    const phases = {};
+    for (const m of recs) phases[m.gamePhase] = (phases[m.gamePhase] ?? 0) + 1;
+    console.error(
+      `  ${g.chessComUuid} analyzed=${String(g.analyzed).padEnd(5)} plies=${String(replay.history().length).padStart(3)} ` +
+        `ownRecords=${String(recs.length).padStart(3)} piecesLeft=${String(left).padStart(2)} ${JSON.stringify(phases)}`,
+    );
+  }
+  console.error(`\nTotal analysis records: ${data.moveAnalysis.length}`);
   process.exit(1);
 }
 
