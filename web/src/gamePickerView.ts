@@ -60,11 +60,18 @@ export function renderGamePicker(
   counts: Record<PickerFilter, number>,
   filter: PickerFilter,
   busyId: string | null,
+  openingName?: string,
 ): string {
   const chips = FILTERS.map(
     (f) =>
       `<button type="button" class="picker-filter${f.id === filter ? " picker-filter-active" : ""}" data-picker-filter="${f.id}" aria-pressed="${f.id === filter}">${f.label} <span class="picker-count">${counts[f.id]}</span></button>`,
   ).join("");
+  // Set from a weak-opening diagnostic's "see these games" jump -- an
+  // extra narrowing on top of the win/loss/draw/analyzed chips above, with
+  // its own way back to the unfiltered picker (critique #7).
+  const openingBanner = openingName
+    ? `<p class="picker-opening-focus">Showing games in <strong>${esc(openingName)}</strong> — <button type="button" class="btn-quiet" data-picker-clear-opening>Clear filter</button></p>`
+    : "";
   const body = cards.length
     ? `<div class="picker-carousel">
         <button type="button" class="picker-nav" data-picker-nav="-1" aria-label="Scroll to newer games">◀</button>
@@ -72,8 +79,8 @@ export function renderGamePicker(
         <button type="button" class="picker-nav" data-picker-nav="1" aria-label="Scroll to older games">▶</button>
       </div>
       <p class="picker-hint">Swipe or scroll for older games. Games that aren't analyzed yet are analyzed when you open them (about half a minute).</p>`
-    : `<p class="status-line">No games match this filter.</p>`;
-  return `<div class="picker-filters" role="group" aria-label="Filter your games">${chips}</div>${body}`;
+    : `<p class="status-line">No games match this filter${openingName ? ` in "${esc(openingName)}"` : ""}.</p>`;
+  return `${openingBanner}<div class="picker-filters" role="group" aria-label="Filter your games">${chips}</div>${body}`;
 }
 
 export function renderSavedPositions(saved: SavedPuzzleRecord[], solvedIds: Set<string>): string {

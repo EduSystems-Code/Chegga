@@ -129,6 +129,40 @@ export function weakestOpening(
   };
 }
 
+export interface OpeningWorstPosition {
+  gameId: string; // chessComUuid -- the game to open the review on
+  ply: number; // 1-indexed half-move, same convention as MoveAnalysisRecord.ply / ReviewStep.ply
+  centipawnLoss: number;
+}
+
+/** The single costliest move the reviewer actually played while
+ * `openingName` was still on the board (gamePhase === "opening" -- a
+ * middlegame blunder in a game that merely started with this opening
+ * isn't "the key position in the line," which is what naming an opening
+ * weakness by name implies). This is the lever `weakestOpening`'s
+ * headline was missing (chegga-2026-08-29 #5 / chegga-2026-09-03 #7):
+ * naming the fact with no way to look at the actual moment is a mirror,
+ * not a diagnostic. Returns undefined when there's nothing to jump to --
+ * no games in this opening, or every opening-phase move in them already
+ * scored 0 loss. */
+export function worstPositionInOpening(
+  games: GameRecord[],
+  ownMoves: MoveAnalysisRecord[],
+  openingName: string,
+): OpeningWorstPosition | undefined {
+  const gameIds = new Set(games.filter((g) => g.openingName === openingName).map((g) => g.chessComUuid));
+  if (gameIds.size === 0) return undefined;
+
+  let worst: OpeningWorstPosition | undefined;
+  for (const move of ownMoves) {
+    if (move.gamePhase !== "opening" || move.centipawnLoss <= 0 || !gameIds.has(move.gameId)) continue;
+    if (!worst || move.centipawnLoss > worst.centipawnLoss) {
+      worst = { gameId: move.gameId, ply: move.ply, centipawnLoss: move.centipawnLoss };
+    }
+  }
+  return worst;
+}
+
 export interface TimePressureAlert {
   band: string;
   avgCentipawnLoss: number;

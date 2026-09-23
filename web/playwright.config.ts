@@ -6,8 +6,13 @@ import { defineConfig, devices } from "@playwright/test";
 //   SMOKE_URL=https://chegga-web.vercel.app npm run test:smoke
 //                                              -> tests the live deploy
 //
-// One-time setup before the first run: `npx playwright install chromium`
-// (downloads the browser; not committed, not in node_modules).
+// One-time setup before the first run: `npx playwright install chromium webkit`
+// (downloads the browsers; not committed, not in node_modules).
+//
+// The `webkit` project is real Safari's engine -- `mobile` (Pixel 7) is still
+// Chromium, so it never covered Safari. WebKit is far heavier per worker than
+// headless Chromium: on a small machine run it with `--workers=2`, or its
+// browser processes are killed mid-test under memory pressure.
 const SMOKE_URL = process.env.SMOKE_URL;
 
 export default defineConfig({
@@ -23,6 +28,7 @@ export default defineConfig({
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile", use: { ...devices["Pixel 7"] } },
+    { name: "webkit", use: { ...devices["iPhone 14"] } },
   ],
   webServer: SMOKE_URL
     ? undefined

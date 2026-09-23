@@ -59,6 +59,7 @@ import {
   leakHeadline,
   weakestPhase,
   weakestOpening,
+  worstPositionInOpening,
   timePressureAlert,
   roughRatingBandContext,
 } from "./statsInsights";
@@ -164,7 +165,7 @@ import {
   type OverlayTint,
 } from "./candidateMoves";
 import { analyzeCandidates, cachedCandidateLines } from "./candidateAnalysis";
-import { buildPickerCards, pickerCounts, type PickerFilter } from "./gamePicker";
+import { buildPickerCards, pickerCounts, PICKER_CARD_LIMIT, type PickerFilter } from "./gamePicker";
 import { renderGamePicker, renderSavedPositions } from "./gamePickerView";
 import { puzzleFromStep } from "./savedPuzzles";
 import { shouldShowTutorial } from "./firstRun";
@@ -1732,18 +1733,34 @@ const pickerStatus = document.querySelector<HTMLParagraphElement>("#picker-statu
 let pickerGames: GameRecord[] = [];
 let pickerFilter: PickerFilter = "all";
 let pickerBusyId: string | null = null;
+// Set by a weak-opening diagnostic's "See these games" jump -- narrows the
+// picker to one opening line on top of the result filter, until explicitly
+// cleared (same persists-until-cleared convention as puzzleFocusFilter).
+let pickerOpeningFilter: string | null = null;
 
 function renderPicker() {
   const track = document.getElementById("picker-track");
   const scrollLeft = track?.scrollLeft ?? 0; // keep the viewer's place when a card flips to "Analyzing…"
   pickerOutput.innerHTML = renderGamePicker(
-    buildPickerCards(pickerGames, pickerFilter),
-    pickerCounts(pickerGames),
+    buildPickerCards(pickerGames, pickerFilter, PICKER_CARD_LIMIT, pickerOpeningFilter ?? undefined),
+    pickerCounts(pickerGames, pickerOpeningFilter ?? undefined),
     pickerFilter,
     pickerBusyId,
+    pickerOpeningFilter ?? undefined,
   );
   const next = document.getElementById("picker-track");
   if (next) next.scrollLeft = scrollLeft;
+}
+
+/** The "See these games" jump from a weak-opening diagnostic (critique
+ * #7): narrows the picker to that exact opening line and brings it into
+ * view, same treatment as the other growth-card jump buttons. */
+function jumpToGamesInOpening(openingName: string) {
+  pickerFilter = "all";
+  pickerOpeningFilter = openingName;
+  expandCard("picker-section");
+  renderPicker();
+  pickerSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function updatePicker(games: GameRecord[]) {
@@ -1758,7 +1775,12 @@ function updatePicker(games: GameRecord[]) {
   void refreshSavedPositions();
 }
 
-async function openPickedGame(id: string) {
+/** Opens a synced game on the review screen, analyzing it first if it
+ * hasn't been yet. `targetPly` -- when given -- jumps straight to that
+ * half-move's step once the review is open, instead of leaving the viewer
+ * on the last move (the "Review the key position" jump from a weak-opening
+ * diagnostic reuses this exact path; see worstPositionInOpening). */
+async function openPickedGame(id: string, targetPly?: number) {
   if (pickerBusyId) return;
   let analyzedNow = false;
   try {
@@ -1784,6 +1806,7 @@ async function openPickedGame(id: string) {
       }
       setStatus(pickerStatus, "");
       openReviewForPgn(game.pgn, moves, game.userColor, game.chessComUuid, game.openingName);
+      if (targetPly !== undefined) showReviewStep(targetPly - 1); // ReviewStep.ply is 1-indexed; step index is ply-1
     } finally {
       db.close();
     }
@@ -1801,6 +1824,12 @@ pickerSection.addEventListener("click", (e) => {
   const filterBtn = target.closest<HTMLElement>("[data-picker-filter]");
   if (filterBtn) {
     pickerFilter = filterBtn.dataset.pickerFilter as PickerFilter;
+    renderPicker();
+    return;
+  }
+  const clearOpeningBtn = target.closest<HTMLElement>("[data-picker-clear-opening]");
+  if (clearOpeningBtn) {
+    pickerOpeningFilter = null;
     renderPicker();
     return;
   }
@@ -2310,9 +2339,18 @@ lichessHistoryBtn.addEventListener("click", async () => {
   let db: IDBDatabase | null = null;
   try {
     db = await openDb();
+    // WebKit repaints this line synchronously: one write per game costs ~115 ms
+    // there against ~0.1 ms in Chromium. Ten a second still reads as a live
+    // counter, and the message below is written either way.
+    let lastProgressPaint = 0;
     const result = await syncLichessFullHistory(idbHistoryStore(db), username, {
       signal: abort.signal,
-      onProgress: (text) => setStatus(syncLog, text),
+      onProgress: (text) => {
+        const now = performance.now();
+        if (now - lastProgressPaint < 100) return;
+        lastProgressPaint = now;
+        setStatus(syncLog, text);
+      },
     });
     if (result.cancelled) {
       setStatus(syncLog, `Stopped: ${result.gamesAdded} new games synced so far. What's already synced is saved — click "Get my full history" again to resume.`);
@@ -3166,6 +3204,13 @@ const patternsOutput = document.querySelector<HTMLDivElement>("#patterns-output"
 const rivalsSection = document.querySelector<HTMLElement>("#rivals-section")!;
 const rivalsOutput = document.querySelector<HTMLDivElement>("#rivals-output")!;
 
+/** HTML-attribute escaping for the insight card's own data-* jump
+ * attributes (opening names / game ids come off Chess.com, not typed by
+ * the viewer, but still untrusted text). */
+function escAttr(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
 function renderInsights(
   profile: Awaited<ReturnType<typeof computeProfileForUsername>>["profile"],
   games: Awaited<ReturnType<typeof computeProfileForUsername>>["analyzedGames"],
@@ -3181,8 +3226,22 @@ function renderInsights(
   const phase = weakestPhase(profile);
   if (phase) items.push(`<div class="insight-item">${phase.text}</div>`);
 
+  // A weak opening named with no way to act on it is a mirror, not a
+  // diagnostic (chegga-2026-08-29 #5 / chegga-2026-09-03 #7): one button
+  // filters the game picker to this exact line, the other jumps straight
+  // to the costliest opening-phase move played in it, reusing the same
+  // review flow the game picker itself opens (openPickedGame).
   const opening = weakestOpening(games, ownMoves);
-  if (opening) items.push(`<div class="insight-item">${opening.text}</div>`);
+  if (opening) {
+    const worstPos = worstPositionInOpening(games, ownMoves, opening.openingName);
+    const actions = [
+      `<button type="button" data-open-games-opening="${escAttr(opening.openingName)}">See these games ↓</button>`,
+      worstPos
+        ? `<button type="button" data-review-worst-game="${escAttr(worstPos.gameId)}" data-review-worst-ply="${worstPos.ply}">Review the key position ↓</button>`
+        : "",
+    ].join("");
+    items.push(`<div class="insight-item">${opening.text}<p class="card-action">${actions}</p></div>`);
+  }
 
   const timePressure = timePressureAlert(profile, ownMoves);
   if (timePressure) items.push(`<div class="insight-item">${timePressure.text}</div>`);
@@ -3192,6 +3251,21 @@ function renderInsights(
   insightsSection.style.display = "";
   insightsOutput.innerHTML = items.join("");
 }
+
+// Delegated -- insightsOutput's innerHTML is replaced wholesale on every
+// refreshProfile call (same reasoning as focusOutput/roadOutput above).
+insightsOutput.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  const gamesBtn = target.closest<HTMLButtonElement>("[data-open-games-opening]");
+  if (gamesBtn) {
+    jumpToGamesInOpening(gamesBtn.dataset.openGamesOpening!);
+    return;
+  }
+  const worstBtn = target.closest<HTMLButtonElement>("[data-review-worst-game]");
+  if (worstBtn) {
+    void openPickedGame(worstBtn.dataset.reviewWorstGame!, Number(worstBtn.dataset.reviewWorstPly));
+  }
+});
 
 // --- Puzzle trainer (blunder replay) ---
 

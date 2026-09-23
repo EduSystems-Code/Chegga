@@ -43,8 +43,13 @@ async function stubLichessHistory(page: Page, total: number) {
   });
 }
 
+// WebKit spends ~20-50 ms in each IndexedDB transaction where Chromium spends
+// well under 1 ms, so storing 650 games is seconds there and minutes here. The
+// behaviour under test is the same; only the budget differs.
+const storeBudget = (browserName: string) => (browserName === "webkit" ? 240_000 : 45_000);
+
 test.describe("Lichess full history", () => {
-  test.setTimeout(60_000);
+  test.setTimeout(300_000);
 
   test.beforeEach(async ({ page }) => {
     // Skip the first-run tutorial; this is about the "Get started" form itself.
@@ -57,7 +62,7 @@ test.describe("Lichess full history", () => {
     });
   });
 
-  test("appears only for Lichess, grows as it runs, cancels, and resumes to completion", async ({ page }) => {
+  test("appears only for Lichess, grows as it runs, cancels, and resumes to completion", async ({ page, browserName }) => {
     await stubLichessHistory(page, TOTAL_GAMES);
     await page.goto("/");
     await expect(page.locator("#main-content")).toBeVisible();
@@ -100,7 +105,9 @@ test.describe("Lichess full history", () => {
 
     // Run it again: it resumes below what is already stored, not from zero.
     await runBtn.click({ force: true });
-    await expect(syncLog).toContainText(/new games synced\. Full history is up to date\./, { timeout: 45_000 });
+    await expect(syncLog).toContainText(/new games synced\. Full history is up to date\./, {
+      timeout: storeBudget(browserName),
+    });
     const finalText = await syncLog.innerText();
     const finalCount = Number(/^(\d+) new games synced\. Full history is up to date\./.exec(finalText)![1]);
 

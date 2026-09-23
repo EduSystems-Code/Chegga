@@ -57,17 +57,26 @@ function matches(card: PickerCard, filter: PickerFilter): boolean {
   }
 }
 
-/** Newest first. */
-export function buildPickerCards(games: GameRecord[], filter: PickerFilter, limit = PICKER_CARD_LIMIT): PickerCard[] {
+/** Newest first. `openingName`, when given, narrows to games in that exact
+ * opening line on top of the result filter -- the "see your games in this
+ * line" jump from a weak-opening diagnostic (critique #7: naming a weak
+ * opening with no way to look at the games it happened in is a mirror). */
+export function buildPickerCards(
+  games: GameRecord[],
+  filter: PickerFilter,
+  limit = PICKER_CARD_LIMIT,
+  openingName?: string,
+): PickerCard[] {
   return games
     .map(toPickerCard)
     .filter((c) => matches(c, filter))
+    .filter((c) => !openingName || c.opening === openingName)
     .sort((a, b) => b.endTime - a.endTime)
     .slice(0, limit);
 }
 
-export function pickerCounts(games: GameRecord[]): Record<PickerFilter, number> {
-  const cards = games.map(toPickerCard);
+export function pickerCounts(games: GameRecord[], openingName?: string): Record<PickerFilter, number> {
+  const cards = games.map(toPickerCard).filter((c) => !openingName || c.opening === openingName);
   return {
     all: cards.length,
     win: cards.filter((c) => c.result === "win").length,
